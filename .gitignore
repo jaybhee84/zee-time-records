@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Vite build output
+dist/
+.vite/
+
+# Electron build/package output
+dist-electron/
+release/
+out/
+build/
+
+# SQLite local data (user's actual DB lives in the OS userData folder, not
+# the repo — but ignore any stray local copies used for dev/testing anyway)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment / secrets
+.env
+.env.*
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor/OS cruft
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# Electron-builder cache
+.electron-builder-cache/

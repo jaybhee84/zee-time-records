@@ -1,0 +1,148 @@
+/* CS Form 48 Styles */
+.cs48-card {
+    width: 330px;
+    background: #ffffff;
+    border: 1px solid #000;
+    padding: 10px 12px;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 11px;
+    color: #000;
+    box-sizing: border-box;
+}
+
+.cs48-header-top {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    font-weight: bold;
+}
+
+.cs48-title {
+    text-align: center;
+    font-size: 14px;
+    font-weight: bold;
+    margin: 6px 0 10px 0;
+    letter-spacing: 0.5px;
+}
+
+.cs48-emp-name {
+    text-align: center;
+    font-weight: bold;
+    font-size: 12px;
+    border-bottom: 1px solid #000;
+    padding-bottom: 2px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+.cs48-month-row {
+    display: flex;
+    gap: 8px;
+    font-size: 10px;
+    margin-bottom: 6px;
+}
+
+.cs48-month-val {
+    border-bottom: 1px solid #000;
+    flex: 1;
+    text-align: center;
+    font-weight: bold;
+}
+
+.cs48-meta-table {
+    display: flex;
+    justify-content: space-between;
+    border: 1px solid #000;
+    padding: 4px;
+    font-size: 9px;
+    margin-bottom: 6px;
+}
+
+.cs48-meta-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.cs48-box {
+    border-bottom: 1px solid #000;
+    min-width: 35px;
+    text-align: right;
+    font-weight: bold;
+}
+
+.cs48-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+}
+
+.cs48-table th,
+.cs48-table td {
+    border: 1px solid #000;
+    padding: 1px 2px;
+    height: 14px;
+}
+
+.cs48-table th {
+    text-align: center;
+    font-weight: bold;
+}
+
+.cs48-table td.center {
+    text-align: center;
+}
+
+.cs48-cert-text {
+    font-size: 8px;
+    text-align: justify;
+    margin: 6px 0 18px 0;
+    line-height: 1.1;
+}
+
+.cs48-sig-line {
+    border-bottom: 1px solid #000;
+    width: 80%;
+    margin: 0 auto;
+}
+
+.cs48-sig-label {
+    text-align: center;
+    font-size: 9px;
+    margin-top: 2px;
+}
+
+.cs48-divider {
+    text-align: center;
+    font-size: 8px;
+    margin: 10px 0;
+    font-weight: bold;
+}
+
+/* Side-by-Side Double View Layout — used only when CSForm48View is
+   rendered with isPrintMode=true (the hidden print window; see
+   PrintRenderWindow.jsx). The .cs48-card width override below is scoped
+   via this descendant selector rather than needing !important + a
+   body-level mode class: two-class specificity naturally wins over the
+   single-class .cs48-card { width: 330px } rule used for the on-screen
+   single-card preview, with no toggling required. */
+.cs48-double-page {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.cs48-double-page .cs48-card {
+    width: 48%;
+    box-sizing: border-box;
+}
+
+/* Separates each employee's block onto its own printed page. Always
+   active — no longer conditional on @media print or a body class, since
+   the hidden print window's only content IS this print output. */
+.cs48-employee-block {
+    page-break-after: always;
+    break-after: page;
+    padding: 8mm 4mm;
+}
