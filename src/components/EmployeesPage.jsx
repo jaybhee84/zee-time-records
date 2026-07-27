@@ -11,18 +11,34 @@ import EmployeeFormModal from "./EmployeeFormModal.jsx";
 
 export default function EmployeesPage({ employees, setEmployees }) {
   const [search, setSearch] = useState("");
+  const [selectedSubGroup, setSelectedSubGroup] = useState("");
   const [modalState, setModalState] = useState(null);
 
+  // Extract unique sub-groups from current employees
+  const subGroupOptions = useMemo(() => {
+    const uniqueGroups = new Set(
+      employees.map((e) => e.subGroup).filter(Boolean),
+    );
+    return Array.from(uniqueGroups).sort();
+  }, [employees]);
+
+  // Combined filter for search and selected sub-group
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return employees;
-    return employees.filter(
-      (e) =>
+
+    return employees.filter((e) => {
+      const matchesSearch =
+        !q ||
         e.familyName?.toLowerCase().includes(q) ||
         e.firstName?.toLowerCase().includes(q) ||
-        e.registryNumber?.toLowerCase().includes(q),
-    );
-  }, [employees, search]);
+        e.registryNumber?.toLowerCase().includes(q);
+
+      const matchesSubGroup =
+        !selectedSubGroup || e.subGroup === selectedSubGroup;
+
+      return matchesSearch && matchesSubGroup;
+    });
+  }, [employees, search, selectedSubGroup]);
 
   const registryNumbers = employees.map((e) => e.registryNumber);
 
@@ -50,6 +66,27 @@ export default function EmployeesPage({ employees, setEmployees }) {
       <div className="page-header">
         <h2>Employees</h2>
         <div className="page-header-actions">
+          {/* Sub-Group Dropdown Filter */}
+          <select
+            value={selectedSubGroup}
+            onChange={(e) => setSelectedSubGroup(e.target.value)}
+            className="subgroup-select"
+            style={{
+              padding: "0.4rem 0.6rem",
+              borderRadius: "6px",
+              border: "1px solid #ccc",
+              fontSize: "14px",
+              cursor: "pointer",
+            }}
+          >
+            <option value="">All</option>
+            {subGroupOptions.map((sg) => (
+              <option key={sg} value={sg}>
+                {sg}
+              </option>
+            ))}
+          </select>
+
           <div className="search-box">
             <Search size={16} />
             <input
@@ -69,12 +106,13 @@ export default function EmployeesPage({ employees, setEmployees }) {
           <p className="hint">
             {employees.length === 0
               ? 'No employees yet — click "Add Employee" to get started.'
-              : "No employees match that search."}
+              : "No employees match that search or sub-group filter."}
           </p>
         ) : (
           <table className="employee-table">
             <thead>
               <tr style={{ verticalAlign: "middle" }}>
+                <th style={{ textAlign: "center", width: "50px" }}>#</th>
                 <th style={{ textAlign: "center" }}>Registry No.</th>
                 <th style={{ textAlign: "left" }}>Name</th>
                 <th style={{ textAlign: "center" }}>Group</th>
@@ -88,11 +126,22 @@ export default function EmployeesPage({ employees, setEmployees }) {
               {filtered
                 .slice()
                 .sort((a, b) => a.familyName.localeCompare(b.familyName))
-                .map((e) => (
+                .map((e, index) => (
                   <tr
                     key={e.registryNumber}
                     style={{ verticalAlign: "middle" }}
                   >
+                    {/* Index / Row Number */}
+                    <td
+                      style={{
+                        textAlign: "center",
+                        fontWeight: "600",
+                        color: "#6b7280",
+                      }}
+                    >
+                      {index + 1}
+                    </td>
+
                     {/* Registry No. (Centered) */}
                     <td style={{ textAlign: "center" }}>{e.registryNumber}</td>
 
@@ -105,7 +154,9 @@ export default function EmployeesPage({ employees, setEmployees }) {
                     {/* Group (Centered) */}
                     <td style={{ textAlign: "center" }}>
                       <span
-                        className={`badge badge-${e.group === "Teaching" ? "teaching" : "nonteaching"}`}
+                        className={`badge badge-${
+                          e.group === "Teaching" ? "teaching" : "nonteaching"
+                        }`}
                       >
                         {e.group}
                       </span>

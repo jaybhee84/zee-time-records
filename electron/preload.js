@@ -34,6 +34,11 @@ contextBridge.exposeInMainWorld('dtrApi', {
   loadEmployees: () => ipcRenderer.invoke('load-employees'),
   saveEmployees: (employees) => ipcRenderer.invoke('save-employees', employees),
 
+  // Custom Sub-Groups
+  loadCustomSubgroups: () => ipcRenderer.invoke('load-custom-subgroups'),
+  addCustomSubgroup: (payload) => ipcRenderer.invoke('add-custom-subgroup', payload),
+  deleteCustomSubgroup: (id) => ipcRenderer.invoke('delete-custom-subgroup', id),
+
   // Attendance Punches
   getPunches: (params) => ipcRenderer.invoke('get-punches', params),
   savePunches: (params) => ipcRenderer.invoke('save-punches', params),
@@ -41,4 +46,7 @@ contextBridge.exposeInMainWorld('dtrApi', {
   // Database Backup & Restore
   exportBackup: () => ipcRenderer.invoke('export-backup'),
   importBackup: () => ipcRenderer.invoke('import-backup'),
+
+  // Vinea (.mdb) Employee Import
+  importVineaEmployees: () => ipcRenderer.invoke('import-vinea-employees'),
 });

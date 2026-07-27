@@ -13,7 +13,11 @@ import {
   Download,
   ExternalLink,
 } from "lucide-react";
-import { groupByPin, buildMonthlyDTR, normalizePin } from "../utils/dtrCalculator.js";
+import {
+  groupByPin,
+  buildMonthlyDTR,
+  normalizePin,
+} from "../utils/dtrCalculator.js";
 import CSForm48View from "./CSForm48View.jsx";
 
 const now = new Date();
@@ -89,6 +93,38 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
   const [selectedPrinter, setSelectedPrinter] = useState("");
   const [printing, setPrinting] = useState(false);
   const [printSuccess, setPrintSuccess] = useState(false);
+
+  // Dynamically include added Teaching Subgroups from employees
+  const teachingSubgroupOptions = useMemo(() => {
+    const list = [...TEACHING_SUBGROUPS];
+    if (Array.isArray(employees)) {
+      employees.forEach((emp) => {
+        const sg = emp?.subGroup?.trim();
+        if (sg && isTeachingSubgroup(sg)) {
+          if (!list.some((item) => item.toLowerCase() === sg.toLowerCase())) {
+            list.push(sg);
+          }
+        }
+      });
+    }
+    return list;
+  }, [employees]);
+
+  // Dynamically include added Non-Teaching Subgroups from employees
+  const nonTeachingSubgroupOptions = useMemo(() => {
+    const list = [...NON_TEACHING_SUBGROUPS];
+    if (Array.isArray(employees)) {
+      employees.forEach((emp) => {
+        const sg = emp?.subGroup?.trim();
+        if (sg && isNonTeachingSubgroup(sg)) {
+          if (!list.some((item) => item.toLowerCase() === sg.toLowerCase())) {
+            list.push(sg);
+          }
+        }
+      });
+    }
+    return list;
+  }, [employees]);
 
   const byPin = useMemo(() => groupByPin(punches), [punches]);
 
@@ -197,7 +233,11 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
         ? `${emp.middleInitial.toUpperCase()}.`
         : "";
       const employeeName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
-      const rows = buildMonthlyDTR(byPin[normalizePin(devPin)] || [], year, month);
+      const rows = buildMonthlyDTR(
+        byPin[normalizePin(devPin)] || [],
+        year,
+        month,
+      );
       return { registryNumber: emp.registryNumber, employeeName, rows };
     }),
     year,
@@ -748,7 +788,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                   onChange={handleSubCategoryChange}
                 >
                   <option value="all">ALL</option>
-                  {TEACHING_SUBGROUPS.map((sg) => (
+                  {teachingSubgroupOptions.map((sg) => (
                     <option key={sg} value={sg}>
                       {sg}
                     </option>
@@ -769,7 +809,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                   onChange={handleSubCategoryChange}
                 >
                   <option value="all">ALL</option>
-                  {NON_TEACHING_SUBGROUPS.map((sg) => (
+                  {nonTeachingSubgroupOptions.map((sg) => (
                     <option key={sg} value={sg}>
                       {sg}
                     </option>
@@ -873,7 +913,11 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
             : "";
           const empName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
 
-          const rows = buildMonthlyDTR(byPin[normalizePin(devPin)] || [], year, month);
+          const rows = buildMonthlyDTR(
+            byPin[normalizePin(devPin)] || [],
+            year,
+            month,
+          );
 
           return (
             <div

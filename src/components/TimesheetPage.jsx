@@ -11,6 +11,7 @@ import {
   WifiOff,
   Lock,
   Unlock,
+  X,
 } from "lucide-react";
 import {
   groupByPin,
@@ -163,7 +164,7 @@ const isNonTeachingSubgroup = (subGroup = "") => {
   );
 };
 
-export default function TimesheetPage() {
+export default function TimesheetPage({ onClose }) {
   const [employees, setEmployees] = useState([]);
   const [punches, setPunches] = useState([]);
 
@@ -489,6 +490,7 @@ export default function TimesheetPage() {
         .btn-primary-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #2563eb; color: #ffffff; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer; }
         .btn-primary-modern:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-secondary-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #f1f5f9; color: #334155; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer; }
+        .btn-close-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #fff1f2; color: #be123c; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: 1px solid #fecdd3; cursor: pointer; }
         .modern-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04); margin-bottom: 24px; }
         .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
         .card-title-row h3 { font-size: 0.95rem; font-weight: 600; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px; }
@@ -567,6 +569,11 @@ export default function TimesheetPage() {
           >
             <Save size={16} /> Save Changes
           </button>
+          {onClose && (
+            <button className="btn-close-modern" onClick={onClose}>
+              <X size={16} /> Close
+            </button>
+          )}
         </div>
       </div>
 

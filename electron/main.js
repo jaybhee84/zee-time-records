@@ -5,6 +5,40 @@ const os = require('os');
 const crypto = require('crypto');
 const initSqlJs = require('sql.js');
 
+// Maps Vinea's free-text `Department` values to the subGroup values this
+// app actually filters/displays on (see TEACHING_SUBGROUPS /
+// NON_TEACHING_SUBGROUPS in TimesheetPage.jsx). Keys are normalized
+// (trimmed + uppercased) so casing/whitespace differences in the source
+// data don't cause misses.
+const VINEA_DEPARTMENT_TO_SUBGROUP = {
+  'GRADE 1 TCHR.': 'Grade 1',
+  'GRADE 2 TCHR.': 'Grade 2',
+  'GRADE 3 TCHR.': 'Grade 3',
+  'GRADE 4 TCHR.': 'Grade 4',
+  'GRADE 5 TCHR.': 'Grade 5',
+  'GRADE 6 TCHR.': 'Grade 6',
+  'KINDER TCHR.': 'Kinder',
+  'DEPT. TEACHER': 'Departmental',
+  'SNC SPED TEACHER': 'SNED',
+  'SUBSTITUTE TEACHER': 'Substitute Teacher',
+  'ALIVECONTRL.': 'Alive',
+  'ADMIN': 'Admin',
+  'JOB ORDER': 'Job Order',
+  // Not one of the app's standard subgroups — best-guess mapped to
+  // "Subject Teacher" since Vinea marks these as TEACHING. Flagged back
+  // to the renderer as "unmapped" so the user can confirm/adjust.
+  'NLC VOLUNTEERS': 'Subject Teacher',
+};
+
+function mapVineaDepartmentToSubgroup(rawDept) {
+  const normalized = (rawDept || '').trim().toUpperCase();
+  const mapped = VINEA_DEPARTMENT_TO_SUBGROUP[normalized];
+  return {
+    subGroup: mapped || (rawDept || '').trim(),
+    wasMapped: Boolean(mapped),
+  };
+}
+
 // Avoid GPU/compositor glitches on Windows
 app.disableHardwareAcceleration();
 
@@ -175,7 +209,20 @@ function runQuery(sql, params = []) {
 }
 
 async function initDatabase() {
-  const SQL = await initSqlJs();
+  const SQL = await initSqlJs({
+    // sql.js's default wasm-loading logic guesses a path relative to
+    // wherever its own JS is running from, which isn't reliable once
+    // everything is packed into app.asar — even with the wasm file itself
+    // unpacked via package.json's asarUnpack, sql.js still needs to be
+    // told explicitly where to find it. In a packaged build, unpacked
+    // asar files live alongside app.asar in an app.asar.unpacked sibling
+    // folder under process.resourcesPath; in dev, node_modules is just a
+    // normal folder on disk.
+    locateFile: (file) =>
+      app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'sql.js', 'dist', file)
+        : path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
+  });
   const userDataPath = app.getPath('userData');
 
   if (!fs.existsSync(userDataPath)) {
@@ -224,6 +271,13 @@ async function initDatabase() {
       title TEXT NOT NULL,
       type TEXT NOT NULL,
       location TEXT DEFAULT 'Isabela City'
+    );
+
+    CREATE TABLE IF NOT EXISTS custom_subgroups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      groupName TEXT NOT NULL,
+      subGroupName TEXT NOT NULL,
+      UNIQUE(groupName, subGroupName)
     );
 
     CREATE INDEX IF NOT EXISTS idx_punches_pin_time ON punches (pin, timestamp);
@@ -460,6 +514,206 @@ ipcMain.handle('auth-create-user', async (event, { username, password } = {}) =>
     hashPassword(password),
   ]);
   return { success: true };
+});
+
+// ---------- Vinea (.mdb) Employee Import ----------
+
+// Reads Vinea's raw in/out punch log (the "DTR" table — one row per clock
+// in/out event) and inserts it directly into this app's `punches` table.
+// Vinea splits date and time across two separate DateTime columns (Date
+// holds the real date with a dummy 00:00:00 time; Time holds the real
+// time-of-day tacked onto Access's null-date epoch), so we recombine them
+// here into a single "YYYY-MM-DD HH:MM:SS" timestamp, which is the format
+// the rest of this app (get-punches / save-punches) expects.
+//
+// Runs entirely inside the main process (not round-tripped through IPC)
+// since a full attendance history can easily be 100k+ rows.
+function importVineaPunches(reader) {
+  const tableNames = reader.getTableNames();
+  if (!tableNames.includes('DTR')) {
+    return { punchesImported: 0, punchesSkipped: 0, punchesTableFound: false };
+  }
+
+  const dtrRows = reader.getTable('DTR').getData();
+
+  // Dedupe against what's already in the local database so re-running an
+  // import doesn't double up punches.
+  const existing = new Set();
+  getAll('SELECT pin, timestamp FROM punches').forEach((r) => {
+    existing.add(`${r.pin}|${r.timestamp}`);
+  });
+
+  const insertStmt = db.prepare(
+    'INSERT INTO punches (pin, staffNoOnDev, timestamp, rawTime) VALUES (?, ?, ?, ?)',
+  );
+
+  let punchesImported = 0;
+  let punchesSkipped = 0;
+
+  for (const row of dtrRows) {
+    const pin = String(row.EmployeeID || '').trim();
+    const dateVal = row.Date;
+    const timeVal = row.Time;
+
+    if (!pin || !(dateVal instanceof Date) || !(timeVal instanceof Date)) {
+      punchesSkipped++;
+      continue;
+    }
+
+    const yyyy = dateVal.getFullYear();
+    const mm = String(dateVal.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateVal.getDate()).padStart(2, '0');
+
+    const hh24 = timeVal.getHours();
+    const min = String(timeVal.getMinutes()).padStart(2, '0');
+    const sec = String(timeVal.getSeconds()).padStart(2, '0');
+
+    const timestamp = `${yyyy}-${mm}-${dd} ${String(hh24).padStart(2, '0')}:${min}:${sec}`;
+    const key = `${pin}|${timestamp}`;
+    if (existing.has(key)) {
+      punchesSkipped++;
+      continue;
+    }
+    existing.add(key);
+
+    let hh12 = hh24 % 12;
+    if (hh12 === 0) hh12 = 12;
+    const meridiem = hh24 >= 12 ? 'PM' : 'AM';
+    const rawTime = `${hh12}:${min} ${meridiem}`;
+
+    insertStmt.run([pin, pin, timestamp, rawTime]);
+    punchesImported++;
+  }
+
+  insertStmt.free();
+  saveDbToDisk();
+
+  return { punchesImported, punchesSkipped, punchesTableFound: true };
+}
+
+ipcMain.handle('import-vinea-employees', async () => {
+  const openResult = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Vinea Backup (.mdb)',
+    filters: [{ name: 'Access Database', extensions: ['mdb', 'accdb'] }],
+    properties: ['openFile'],
+  });
+
+  if (openResult.canceled || openResult.filePaths.length === 0) {
+    return { success: false, canceled: true };
+  }
+
+  const filePath = openResult.filePaths[0];
+
+  try {
+    // mdb-reader ships as an ESM-only package, so it can't be loaded with
+    // require() from this CommonJS file — dynamic import() works fine
+    // from CJS at runtime, so we load it lazily here instead.
+    const { default: MDBReader } = await import('mdb-reader');
+
+    const buffer = fs.readFileSync(filePath);
+    const reader = new MDBReader(buffer);
+
+    if (!reader.getTableNames().includes('Employees')) {
+      return {
+        success: false,
+        error: 'No "Employees" table found in this file — is this a Vinea backup?',
+      };
+    }
+
+    const rows = reader.getTable('Employees').getData();
+
+    const employees = [];
+    const unmappedDepartments = new Set();
+    let skippedCount = 0;
+
+    for (const row of rows) {
+      const registryNumber = String(row.EmployeeID || '').trim();
+      if (!registryNumber) {
+        skippedCount++;
+        continue;
+      }
+
+      const rawDept = String(row.Department || '').trim();
+      const { subGroup, wasMapped } = mapVineaDepartmentToSubgroup(rawDept);
+      if (rawDept && !wasMapped) {
+        unmappedDepartments.add(rawDept);
+      }
+
+      employees.push({
+        registryNumber,
+        staffNoOnDev: String(row.StaffNumber || '').trim() || registryNumber,
+        familyName: String(row.Lastname || '').trim(),
+        firstName: String(row.Firstname || '').trim(),
+        middleInitial: String(row.Middlename || '').trim(),
+        subGroup,
+      });
+    }
+
+    return {
+      success: true,
+      employees,
+      skippedCount,
+      unmappedDepartments: Array.from(unmappedDepartments),
+      sourceFile: path.basename(filePath),
+      ...importVineaPunches(reader),
+    };
+  } catch (err) {
+    console.error('Failed to import Vinea employees:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// ---------- Custom Sub-Groups ----------
+// User-added sub-groups (beyond the app's built-in defaults) live here so
+// they persist across restarts and travel with a full .db backup/restore,
+// the same as everything else in this app.
+
+ipcMain.handle('load-custom-subgroups', async () => {
+  try {
+    return getAll('SELECT * FROM custom_subgroups ORDER BY subGroupName ASC');
+  } catch (err) {
+    console.error('Failed to load custom subgroups:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('add-custom-subgroup', async (event, { groupName, subGroupName } = {}) => {
+  try {
+    const trimmedGroup = String(groupName || '').trim();
+    const trimmedSubGroup = String(subGroupName || '').trim();
+
+    if (!trimmedGroup || !trimmedSubGroup) {
+      return { success: false, error: 'Group and sub-group name are required.' };
+    }
+
+    db.run(
+      'INSERT OR IGNORE INTO custom_subgroups (groupName, subGroupName) VALUES (?, ?)',
+      [trimmedGroup, trimmedSubGroup],
+    );
+    saveDbToDisk();
+
+    return {
+      success: true,
+      subgroups: getAll('SELECT * FROM custom_subgroups ORDER BY subGroupName ASC'),
+    };
+  } catch (err) {
+    console.error('Failed to add custom subgroup:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('delete-custom-subgroup', async (event, id) => {
+  try {
+    db.run('DELETE FROM custom_subgroups WHERE id = ?', [id]);
+    saveDbToDisk();
+    return {
+      success: true,
+      subgroups: getAll('SELECT * FROM custom_subgroups ORDER BY subGroupName ASC'),
+    };
+  } catch (err) {
+    console.error('Failed to delete custom subgroup:', err);
+    return { success: false, error: err.message };
+  }
 });
 
 // ---------- Employee Roster IPCs ----------

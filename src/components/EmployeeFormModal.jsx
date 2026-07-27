@@ -1,9 +1,13 @@
-import React, { useState } from "react";
-import { X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { X, Plus, Trash2 } from "lucide-react";
 
 const GROUPS = ["Teaching", "Nonteaching"];
 
-// Dynamic Sub-Group lists
+// Dynamic Sub-Group lists — kept in sync with TimesheetPage.jsx's
+// TEACHING_SUBGROUPS / NON_TEACHING_SUBGROUPS, since that's what actually
+// filters/classifies employees when building the DTR. If these two lists
+// drift, an employee saved here with a subGroup TimesheetPage doesn't
+// recognize falls through to the wrong bucket there.
 const TEACHING_SUBGROUPS = [
   "Kinder",
   "Grade 1",
@@ -12,14 +16,18 @@ const TEACHING_SUBGROUPS = [
   "Grade 4",
   "Grade 5",
   "Grade 6",
-  "SPED",
+  "SNED",
   "Departmental",
-  "Subject Teachers",
+  "Subject Teacher",
+  "Alive",
+  "Substitute Teacher",
 ];
 
 const NON_TEACHING_SUBGROUPS = ["Admin", "Job Order"];
 
-const getSubGroups = (group) =>
+const ADD_CUSTOM_VALUE = "__add_custom_subgroup__";
+
+const getBuiltinSubGroups = (group) =>
   group === "Nonteaching" ? NON_TEACHING_SUBGROUPS : TEACHING_SUBGROUPS;
 
 const emptyForm = {
@@ -51,6 +59,20 @@ export default function EmployeeFormModal({
   const [error, setError] = useState("");
   const isEditing = Boolean(initial);
 
+  // Custom sub-groups persisted in SQLite (see main.js's custom_subgroups
+  // table), loaded once when this modal opens.
+  const [customSubgroups, setCustomSubgroups] = useState([]);
+  const [showAddSubgroup, setShowAddSubgroup] = useState(false);
+  const [newSubgroupName, setNewSubgroupName] = useState("");
+  const [subgroupError, setSubgroupError] = useState("");
+  const [showManageSubgroups, setShowManageSubgroups] = useState(false);
+
+  useEffect(() => {
+    window.dtrApi?.loadCustomSubgroups().then((rows) => {
+      if (rows) setCustomSubgroups(rows);
+    });
+  }, []);
+
   // Name fields list for targeting uppercase conversion
   const nameFields = ["familyName", "firstName", "middleInitial"];
 
@@ -62,10 +84,21 @@ export default function EmployeeFormModal({
     setForm((f) => ({ ...f, [field]: value }));
   };
 
+  // Built-in sub-groups plus any custom ones the user has added for that
+  // group, deduped in case a custom entry happens to match a built-in name.
+  const getCombinedSubGroups = (group) => {
+    const builtins = getBuiltinSubGroups(group);
+    const customs = customSubgroups
+      .filter((c) => c.groupName === group)
+      .map((c) => c.subGroupName)
+      .filter((name) => !builtins.includes(name));
+    return [...builtins, ...customs];
+  };
+
   // Dynamic handler when Group changes so Sub-Group updates automatically
   const handleGroupChange = (e) => {
     const newGroup = e.target.value;
-    const availableSubGroups = getSubGroups(newGroup);
+    const availableSubGroups = getCombinedSubGroups(newGroup);
     setForm((f) => ({
       ...f,
       group: newGroup,
@@ -74,6 +107,58 @@ export default function EmployeeFormModal({
         ? f.subGroup
         : availableSubGroups[0],
     }));
+  };
+
+  const handleSubGroupChange = (e) => {
+    const value = e.target.value;
+    if (value === ADD_CUSTOM_VALUE) {
+      setNewSubgroupName("");
+      setSubgroupError("");
+      setShowAddSubgroup(true);
+      return;
+    }
+    setForm((f) => ({ ...f, subGroup: value }));
+  };
+
+  const handleAddSubgroupSubmit = async (e) => {
+    e.preventDefault();
+    const trimmed = newSubgroupName.trim();
+
+    if (!trimmed) {
+      setSubgroupError("Enter a name for the new sub-group.");
+      return;
+    }
+    if (getCombinedSubGroups(form.group).includes(trimmed)) {
+      setSubgroupError("That sub-group already exists for this group.");
+      return;
+    }
+
+    const res = await window.dtrApi?.addCustomSubgroup({
+      groupName: form.group,
+      subGroupName: trimmed,
+    });
+
+    if (!res?.success) {
+      setSubgroupError(res?.error || "Failed to add sub-group.");
+      return;
+    }
+
+    setCustomSubgroups(res.subgroups || []);
+    setForm((f) => ({ ...f, subGroup: trimmed }));
+    setShowAddSubgroup(false);
+  };
+
+  const handleDeleteSubgroup = async (row) => {
+    const res = await window.dtrApi?.deleteCustomSubgroup(row.id);
+    if (!res?.success) return;
+
+    setCustomSubgroups(res.subgroups || []);
+
+    // If the deleted sub-group was the one currently selected, fall back
+    // to the first built-in option for the current group.
+    if (form.subGroup === row.subGroupName) {
+      setForm((f) => ({ ...f, subGroup: getBuiltinSubGroups(f.group)[0] }));
+    }
   };
 
   const handleSubmit = (e) => {
@@ -108,7 +193,10 @@ export default function EmployeeFormModal({
     });
   };
 
-  const currentSubGroups = getSubGroups(form.group);
+  const currentSubGroups = getCombinedSubGroups(form.group);
+  const currentGroupCustomSubgroups = customSubgroups.filter(
+    (c) => c.groupName === form.group,
+  );
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -230,17 +318,35 @@ export default function EmployeeFormModal({
             </label>
             <label style={{ flex: 1, minWidth: 0 }}>
               Sub-Group
-              <select
-                style={{ width: "100%", boxSizing: "border-box" }}
-                value={form.subGroup}
-                onChange={update("subGroup")}
+              <div
+                style={{ display: "flex", gap: "6px", alignItems: "center" }}
               >
-                {currentSubGroups.map((sg) => (
-                  <option key={sg} value={sg}>
-                    {sg}
+                <select
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  value={form.subGroup}
+                  onChange={handleSubGroupChange}
+                >
+                  {currentSubGroups.map((sg) => (
+                    <option key={sg} value={sg}>
+                      {sg}
+                    </option>
+                  ))}
+                  <option value={ADD_CUSTOM_VALUE}>
+                    + Add custom sub-group...
                   </option>
-                ))}
-              </select>
+                </select>
+                {currentGroupCustomSubgroups.length > 0 && (
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Manage custom sub-groups"
+                    onClick={() => setShowManageSubgroups(true)}
+                    style={{ flexShrink: 0 }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
             </label>
           </div>
 
@@ -264,6 +370,151 @@ export default function EmployeeFormModal({
           </div>
         </form>
       </div>
+
+      {showAddSubgroup && (
+        <div
+          className="modal-backdrop"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowAddSubgroup(false);
+          }}
+          style={{ zIndex: 1100 }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "320px",
+              boxSizing: "border-box",
+            }}
+          >
+            <div className="modal-header">
+              <h3>Add Sub-Group</h3>
+              <button
+                className="icon-btn"
+                type="button"
+                onClick={() => setShowAddSubgroup(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form
+              onSubmit={handleAddSubgroupSubmit}
+              style={{ padding: "0 4px" }}
+            >
+              <label style={{ display: "block", width: "100%" }}>
+                New sub-group name (for {form.group})
+                <input
+                  autoFocus
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  value={newSubgroupName}
+                  onChange={(e) => {
+                    setNewSubgroupName(e.target.value);
+                    setSubgroupError("");
+                  }}
+                  placeholder="e.g. SBFP Coordinator"
+                />
+              </label>
+              {subgroupError && <p className="login-error">{subgroupError}</p>}
+              <div
+                className="modal-actions"
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "8px",
+                  marginTop: "16px",
+                }}
+              >
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setShowAddSubgroup(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit">
+                  <Plus size={14} style={{ marginRight: 4 }} />
+                  Add
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showManageSubgroups && (
+        <div
+          className="modal-backdrop"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowManageSubgroups(false);
+          }}
+          style={{ zIndex: 1100 }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "320px",
+              boxSizing: "border-box",
+            }}
+          >
+            <div className="modal-header">
+              <h3>Manage Sub-Groups ({form.group})</h3>
+              <button
+                className="icon-btn"
+                type="button"
+                onClick={() => setShowManageSubgroups(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: "4px" }}>
+              <p
+                style={{
+                  fontSize: "0.8rem",
+                  color: "#666",
+                  marginTop: 0,
+                  marginBottom: "12px",
+                }}
+              >
+                Only custom sub-groups you've added can be removed here.
+                Built-in sub-groups aren't shown since they can't be deleted.
+              </p>
+              {currentGroupCustomSubgroups.length === 0 ? (
+                <p className="hint">No custom sub-groups for this group yet.</p>
+              ) : (
+                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {currentGroupCustomSubgroups.map((row) => (
+                    <li
+                      key={row.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "6px 0",
+                        borderBottom: "1px solid #eee",
+                      }}
+                    >
+                      <span>{row.subGroupName}</span>
+                      <button
+                        type="button"
+                        className="icon-btn danger"
+                        title="Delete this sub-group"
+                        onClick={() => handleDeleteSubgroup(row)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

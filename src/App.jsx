@@ -86,7 +86,10 @@ export default function App() {
         ) : (
           <>
             {activeTab === "employees" && (
-              <EmployeesPage employees={employees} setEmployees={setEmployees} />
+              <EmployeesPage
+                employees={employees}
+                setEmployees={setEmployees}
+              />
             )}
             {activeTab === "attendance" && (
               <AttendancePage
@@ -96,11 +99,15 @@ export default function App() {
                 setPunches={setPunches}
               />
             )}
-            {activeTab === "timesheet" && <TimesheetPage />}
+            {activeTab === "timesheet" && (
+              <TimesheetPage onClose={() => setActiveTab("employees")} />
+            )}
             {activeTab === "printDtr" && (
               <PrintDTRPage employees={employees} punches={punches} />
             )}
-            {activeTab === "backup" && <BackupView />}
+            {activeTab === "backup" && (
+              <BackupView employees={employees} setEmployees={setEmployees} />
+            )}
           </>
         )}
       </main>
