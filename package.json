@@ -1,6 +1,6 @@
 {
   "name": "zee-time-records-app",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "DTR generator that imports ZKTeco USB flash-disk attendance dumps and produces CSC Form 48 style Daily Time Records.",
   "main": "electron/main.js",
   "scripts": {
@@ -30,13 +30,21 @@
     "productName": "Zee Time Records App",
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "src/assets/**/*"
     ],
     "asarUnpack": [
       "**/node_modules/sql.js/dist/*.wasm"
     ],
     "directories": {
       "output": "release"
+    },
+    "win": {
+      "icon": "src/assets/ZeeTimeRecords.ico",
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "icon": "src/assets/ZeeTimeRecords_icon.png"
     }
   }
 }

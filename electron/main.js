@@ -87,6 +87,7 @@ function createPrintWindow(jobId) {
       show: true,
       width: 700,
       height: 500,
+      icon: path.join(__dirname, 'assets', 'ZeeTimeRecords.ico'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -263,6 +264,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: path.join(__dirname, 'assets', 'ZeeTimeRecords.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
