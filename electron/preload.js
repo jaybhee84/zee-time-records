@@ -1,10 +1,16 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('dtrApi', {
+  // App Version
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+
   // Authentication
   authUserCount: () => ipcRenderer.invoke('auth-user-count'),
   authLogin: (creds) => ipcRenderer.invoke('auth-login', creds),
   authCreateUser: (creds) => ipcRenderer.invoke('auth-create-user', creds),
+  authListUsers: () => ipcRenderer.invoke('auth-list-users'),
+  authUpdateUser: (payload) => ipcRenderer.invoke('auth-update-user', payload),
+  authDeleteUser: (target) => ipcRenderer.invoke('auth-delete-user', target),
 
   // File import & PDF Export
   pickAttlogFile: () => ipcRenderer.invoke('pick-attlog-file'),

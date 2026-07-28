@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { Users, ScanLine, Printer, LogOut, Database } from "lucide-react";
+import { Users, ScanLine, Printer, LogOut, Database, User } from "lucide-react";
 
 const NAV_ITEMS = [
   { key: "employees", label: "Employees", icon: Users },
   { key: "attendance", label: "Attendance / DTR", icon: ScanLine },
   { key: "printDtr", label: "Print DTR", icon: Printer },
   { key: "backup", label: "Backup & Restore", icon: Database },
+  { key: "userAccount", label: "User Account", icon: User },
 ];
 
 const TIMESHEET_UNLOCK_CODE = "1984";
@@ -48,8 +49,8 @@ export default function Sidebar({
       <div className="sidebar-brand">
         <span
           className="sidebar-brand-mark"
-          onClick={openCodeModal}
-          style={{ cursor: "pointer" }}
+          onDoubleClick={openCodeModal}
+          style={{ cursor: "default", userSelect: "none" }}
         >
           DTR
         </span>
@@ -67,9 +68,6 @@ export default function Sidebar({
             <span>{label}</span>
           </button>
         ))}
-
-        {/* Timesheet is intentionally omitted from visible nav.
-            It's unlocked only via the hidden code prompt above. */}
       </nav>
 
       <div className="sidebar-footer">
@@ -87,7 +85,7 @@ export default function Sidebar({
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.45)",
+            background: "rgba(15, 23, 42, 0.45)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -99,10 +97,10 @@ export default function Sidebar({
             onClick={(e) => e.stopPropagation()}
             style={{
               background: "#fff",
-              borderRadius: 8,
+              borderRadius: 10,
               padding: "24px",
               width: 280,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+              boxShadow: "0 8px 24px rgba(18, 40, 63, 0.2)",
             }}
           >
             <form onSubmit={handleCodeSubmit}>
@@ -111,8 +109,10 @@ export default function Sidebar({
                 style={{
                   display: "block",
                   marginBottom: 8,
-                  fontSize: 14,
+                  fontSize: 12.5,
                   fontWeight: 600,
+                  textTransform: "uppercase",
+                  color: "#5b6673",
                 }}
               >
                 Enter access code
@@ -132,7 +132,7 @@ export default function Sidebar({
                   padding: "8px 10px",
                   fontSize: 14,
                   borderRadius: 6,
-                  border: codeError ? "1px solid #d33" : "1px solid #ccc",
+                  border: codeError ? "1px solid #c24444" : "1px solid #e1e5ea",
                   marginBottom: codeError ? 6 : 12,
                   boxSizing: "border-box",
                 }}
@@ -140,7 +140,7 @@ export default function Sidebar({
               {codeError && (
                 <p
                   style={{
-                    color: "#d33",
+                    color: "#c24444",
                     fontSize: 12,
                     margin: "0 0 10px",
                   }}
@@ -158,8 +158,9 @@ export default function Sidebar({
                     padding: "6px 12px",
                     fontSize: 13,
                     borderRadius: 6,
-                    border: "1px solid #ccc",
-                    background: "#f5f5f5",
+                    border: "1px solid #e1e5ea",
+                    background: "#eef1f5",
+                    color: "#17212b",
                     cursor: "pointer",
                   }}
                 >
@@ -172,7 +173,7 @@ export default function Sidebar({
                     fontSize: 13,
                     borderRadius: 6,
                     border: "none",
-                    background: "#2563eb",
+                    background: "#1b3a5c",
                     color: "#fff",
                     cursor: "pointer",
                   }}

@@ -146,6 +146,29 @@ const format12HourWithAmPm = (input = "", field = "") => {
   return `${h}:${formattedM} ${meridiem}`;
 };
 
+/**
+ * Converts a formatted 12-hour display string (e.g. "8:00 AM", "12 PM")
+ * into the canonical 24-hour "HH:MM:SS" format used for the `timestamp`
+ * column everywhere else in the database (ZKTeco import, Vinea import).
+ * Returns null if the value can't be parsed.
+ */
+const to24HourTime = (formatted = "") => {
+  const match = formatted.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (!match) return null;
+
+  let h = parseInt(match[1], 10);
+  const m = match[2] || "00";
+  const meridiem = match[3].toUpperCase();
+
+  if (meridiem === "AM") {
+    if (h === 12) h = 0;
+  } else if (h !== 12) {
+    h += 12;
+  }
+
+  return `${String(h).padStart(2, "0")}:${m}:00`;
+};
+
 const isTeachingSubgroup = (subGroup = "") => {
   const normalized = subGroup.trim().toLowerCase();
   return (
@@ -178,9 +201,20 @@ export default function TimesheetPage({ onClose }) {
   // Track manually unlocked Weekend Days (Sat/Sun)
   const [unlockedDays, setUnlockedDays] = useState({});
 
+  // Save status banner (replaces native alert(), which desyncs Electron
+  // renderer focus and can leave other inputs/modals unclickable until
+  // the user clicks away and back in)
+  const [saveMessage, setSaveMessage] = useState(null); // { type: "success" | "error", text }
+
   // Holiday & Network state
   const [holidays, setHolidays] = useState({});
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    if (!saveMessage) return;
+    const timer = setTimeout(() => setSaveMessage(null), 3500);
+    return () => clearTimeout(timer);
+  }, [saveMessage]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -216,7 +250,6 @@ export default function TimesheetPage({ onClose }) {
             apiHolidays.forEach((item) => {
               let holidayName = item.name || item.localName;
 
-              // Force preferred naming (Araw ng Kagitingan)
               if (
                 item.date.endsWith("-04-09") ||
                 holidayName.toLowerCase().includes("valor")
@@ -362,18 +395,38 @@ export default function TimesheetPage({ onClose }) {
   const handleCellChange = (dayNum, field, value) => {
     if (!devPin) return;
 
-    const isTimeField = ["amIn", "amOut", "pmIn", "pmOut"].includes(field);
-    const formattedVal = isTimeField
-      ? format12HourWithAmPm(value, field)
-      : value;
-
+    // Store the raw value as typed. Reformatting on every keystroke feeds
+    // the already-formatted text (letters, colon, space) back into the box,
+    // so the next digit gets appended onto "7 AM" instead of "7", corrupting
+    // the digit parsing (e.g. "7:59" mutating into "10:xx"). Formatting is
+    // applied once, on blur, against the clean text the user actually typed.
     setModifiedRows((prev) => ({
       ...prev,
       [dayNum]: {
         ...(prev[dayNum] || {}),
-        [field]: formattedVal,
+        [field]: value,
       },
     }));
+  };
+
+  const handleCellBlur = (dayNum, field) => {
+    if (!devPin) return;
+
+    const isTimeField = ["amIn", "amOut", "pmIn", "pmOut"].includes(field);
+    if (!isTimeField) return;
+
+    setModifiedRows((prev) => {
+      const currentVal = prev[dayNum]?.[field];
+      if (currentVal === undefined || currentVal === "") return prev;
+
+      return {
+        ...prev,
+        [dayNum]: {
+          ...(prev[dayNum] || {}),
+          [field]: format12HourWithAmPm(currentVal, field),
+        },
+      };
+    });
   };
 
   const handleReset = () => {
@@ -381,10 +434,9 @@ export default function TimesheetPage({ onClose }) {
     setUnlockedDays({});
   };
 
-  // Toggle weekend row lock/unlock state - ignores clicks inside inputs
   const handleWeekendClick = (e, dayNum, isWeekend) => {
     if (e.target.tagName === "INPUT" || e.target.closest("input")) {
-      return; // Prevent clicks inside input fields from closing/locking the row
+      return;
     }
 
     if (!selectedEmployee || !isWeekend) return;
@@ -424,12 +476,18 @@ export default function TimesheetPage({ onClose }) {
 
   const handleSave = async () => {
     if (!selectedEmployee || !devPin) {
-      alert("Please select a specific employee to save changes.");
+      setSaveMessage({
+        type: "error",
+        text: "Please select a specific employee to save changes.",
+      });
       return;
     }
 
     if (Object.keys(modifiedRows).length === 0) {
-      alert("No changes detected for the selected employee.");
+      setSaveMessage({
+        type: "error",
+        text: "No changes detected for the selected employee.",
+      });
       return;
     }
 
@@ -440,22 +498,28 @@ export default function TimesheetPage({ onClose }) {
       const mergedDay = { ...baseDay, ...customDay };
 
       const slots = [
-        mergedDay.amIn,
-        mergedDay.amOut,
-        mergedDay.pmIn,
-        mergedDay.pmOut,
+        { field: "amIn", value: mergedDay.amIn },
+        { field: "amOut", value: mergedDay.amOut },
+        { field: "pmIn", value: mergedDay.pmIn },
+        { field: "pmOut", value: mergedDay.pmOut },
       ];
 
-      slots.forEach((timeVal) => {
-        if (timeVal && timeVal.trim() !== "") {
+      slots.forEach(({ field, value: rawVal }) => {
+        if (rawVal && rawVal.trim() !== "") {
+          // format12HourWithAmPm is idempotent on an already-formatted
+          // string, so this is a safe no-op if onBlur already ran, and a
+          // safety net if Save was clicked before blur fired.
+          const formatted = format12HourWithAmPm(rawVal, field);
+          const time24 = to24HourTime(formatted);
+          if (!time24) return; // skip anything that didn't parse cleanly
           const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(
             dayNum,
-          ).padStart(2, "0")} ${timeVal.trim()}`;
+          ).padStart(2, "0")} ${time24}`;
           newPunches.push({
             pin: devPin,
             staffNoOnDev: devPin,
             timestamp: dateStr,
-            rawTime: timeVal.trim(),
+            rawTime: formatted,
           });
         }
       });
@@ -469,13 +533,27 @@ export default function TimesheetPage({ onClose }) {
           month,
           newPunches,
         });
-        alert("Timesheet updates saved successfully to local SQLite storage!");
+        setSaveMessage({
+          type: "success",
+          text: "Timesheet updates saved successfully to local SQLite storage!",
+        });
         setModifiedRows({});
         loadPunches();
       }
     } catch (err) {
       console.error("Save error:", err);
-      alert("Failed to save changes to local database.");
+      setSaveMessage({
+        type: "error",
+        text: "Failed to save changes to local database.",
+      });
+    }
+  };
+
+  const handleClose = () => {
+    if (typeof onClose === "function") {
+      onClose();
+    } else if (window.history && window.history.length > 1) {
+      window.history.back();
     }
   };
 
@@ -487,10 +565,14 @@ export default function TimesheetPage({ onClose }) {
         .modern-header h2 { font-size: 1.4rem; font-weight: 700; color: #0f172a; margin: 0; }
         .modern-header .subtext { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
         .action-buttons { display: flex; gap: 10px; align-items: center; }
-        .btn-primary-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #2563eb; color: #ffffff; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer; }
+        .btn-primary-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #2563eb; color: #ffffff; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer; pointer-events: auto !important; }
         .btn-primary-modern:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #f1f5f9; color: #334155; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer; }
-        .btn-close-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #fff1f2; color: #be123c; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: 1px solid #fecdd3; cursor: pointer; }
+        .btn-secondary-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #f1f5f9; color: #334155; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer; pointer-events: auto !important; }
+        .btn-close-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #fff1f2; color: #be123c; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: 1px solid #fecdd3; cursor: pointer; pointer-events: auto !important; }
+        .btn-close-modern:hover { background-color: #ffe4e6; }
+        .ts-save-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; margin-bottom: 12px; }
+        .ts-save-banner.success { background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+        .ts-save-banner.error { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
         .modern-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04); margin-bottom: 24px; }
         .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
         .card-title-row h3 { font-size: 0.95rem; font-weight: 600; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px; }
@@ -499,24 +581,21 @@ export default function TimesheetPage({ onClose }) {
         .form-group { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
         .form-group-grow { flex-grow: 1; min-width: 240px; }
         .form-label { display: flex; align-items: center; gap: 6px; font-size: 0.725rem; font-weight: 700; text-transform: uppercase; color: #64748b; }
-        .form-select, .form-input { height: 40px; padding: 0 12px; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.875rem; color: #0f172a; outline: none; }
+        .form-select, .form-input { height: 40px; padding: 0 12px; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.875rem; color: #0f172a; outline: none; pointer-events: auto !important; }
         .ts-employee-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
         .ts-emp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
         .ts-emp-name { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
         .ts-emp-placeholder { font-size: 0.9rem; color: #64748b; font-style: italic; }
         .ts-emp-badge { background-color: #e2e8f0; color: #475569; font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 6px; }
         
-        /* Table Styling with Weekend & Holiday Indicators */
         .dtr-grid-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         .dtr-grid-table th, .dtr-grid-table td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; }
         .dtr-grid-table th { background-color: #f8fafc; color: #334155; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; }
         
-        /* 12-Hour Input Style with AM/PM */
-        .dtr-grid-input { width: 100%; border: 1px solid transparent; background: transparent; text-align: center; font-size: 0.85rem; font-family: monospace, monospace; font-weight: 600; padding: 4px 0; color: #0f172a; letter-spacing: 0.5px; }
+        .dtr-grid-input { width: 100%; border: 1px solid transparent; background: transparent; text-align: center; font-size: 0.85rem; font-family: monospace, monospace; font-weight: 600; padding: 4px 0; color: #0f172a; letter-spacing: 0.5px; pointer-events: auto !important; user-select: text; }
         .dtr-grid-input:focus { background-color: #eff6ff; border-color: #2563eb; outline: none; border-radius: 4px; }
         .dtr-grid-input:disabled { background-color: transparent; cursor: not-allowed; opacity: 0.75; }
 
-        /* Row Color Variants for Saturday, Sunday, and Holidays */
         .row-sat { background-color: #f8fafc; }
         .row-sun { background-color: #fef2f2; }
         .row-holiday { background-color: #fffbeb; }
@@ -524,14 +603,12 @@ export default function TimesheetPage({ onClose }) {
         .row-weekend-clickable:hover { background-color: #f1f5f9; }
         .row-unlocked { background-color: #f0fdf4 !important; }
 
-        /* Badges for Day Types */
         .day-cell { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 0 4px; font-weight: 600; }
         .badge-sat { background-color: #cbd5e1; color: #334155; font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
         .badge-sun { background-color: #fca5a5; color: #7f1d1d; font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
         .badge-unlocked { background-color: #86efac !important; color: #14532d !important; }
         .badge-holiday { background-color: #fde047; color: #713f12; font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 
-        /* Network Indicator Badge */
         .net-status { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
         .net-online { background-color: #dcfce7; color: #166534; }
         .net-offline { background-color: #fee2e2; color: #991b1b; }
@@ -569,13 +646,17 @@ export default function TimesheetPage({ onClose }) {
           >
             <Save size={16} /> Save Changes
           </button>
-          {onClose && (
-            <button className="btn-close-modern" onClick={onClose}>
-              <X size={16} /> Close
-            </button>
-          )}
+          <button className="btn-close-modern" onClick={handleClose}>
+            <X size={16} /> Close
+          </button>
         </div>
       </div>
+
+      {saveMessage && (
+        <div className={`ts-save-banner ${saveMessage.type}`} role="status">
+          {saveMessage.text}
+        </div>
+      )}
 
       {/* Filter Controls */}
       <section className="modern-card">
@@ -870,10 +951,10 @@ export default function TimesheetPage({ onClose }) {
                         placeholder={getPlaceholder()}
                         disabled={!isEditable}
                         value={amIn}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) =>
                           handleCellChange(dayNum, "amIn", e.target.value)
                         }
+                        onBlur={() => handleCellBlur(dayNum, "amIn")}
                       />
                     </td>
                     <td>
@@ -884,10 +965,10 @@ export default function TimesheetPage({ onClose }) {
                         placeholder={getPlaceholder()}
                         disabled={!isEditable}
                         value={amOut}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) =>
                           handleCellChange(dayNum, "amOut", e.target.value)
                         }
+                        onBlur={() => handleCellBlur(dayNum, "amOut")}
                       />
                     </td>
                     <td>
@@ -898,10 +979,10 @@ export default function TimesheetPage({ onClose }) {
                         placeholder={getPlaceholder()}
                         disabled={!isEditable}
                         value={pmIn}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) =>
                           handleCellChange(dayNum, "pmIn", e.target.value)
                         }
+                        onBlur={() => handleCellBlur(dayNum, "pmIn")}
                       />
                     </td>
                     <td>
@@ -912,10 +993,10 @@ export default function TimesheetPage({ onClose }) {
                         placeholder={getPlaceholder()}
                         disabled={!isEditable}
                         value={pmOut}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) =>
                           handleCellChange(dayNum, "pmOut", e.target.value)
                         }
+                        onBlur={() => handleCellBlur(dayNum, "pmOut")}
                       />
                     </td>
                     <td>
@@ -925,7 +1006,6 @@ export default function TimesheetPage({ onClose }) {
                         placeholder="0"
                         disabled={!isEditable}
                         value={undertimeHours}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) =>
                           handleCellChange(
                             dayNum,
@@ -942,7 +1022,6 @@ export default function TimesheetPage({ onClose }) {
                         placeholder="0"
                         disabled={!isEditable}
                         value={undertimeMinutes}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) =>
                           handleCellChange(
                             dayNum,

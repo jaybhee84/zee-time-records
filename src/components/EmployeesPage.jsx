@@ -13,6 +13,7 @@ export default function EmployeesPage({ employees, setEmployees }) {
   const [search, setSearch] = useState("");
   const [selectedSubGroup, setSelectedSubGroup] = useState("");
   const [modalState, setModalState] = useState(null);
+  const [confirmRemoveTarget, setConfirmRemoveTarget] = useState(null);
 
   // Extract unique sub-groups from current employees
   const subGroupOptions = useMemo(() => {
@@ -54,11 +55,22 @@ export default function EmployeesPage({ employees, setEmployees }) {
     setModalState(null);
   };
 
-  const handleRemove = (registryNumber) => {
-    if (!confirm("Remove this employee?")) return;
+  const handleRemove = (employee) => {
+    setConfirmRemoveTarget(employee);
+  };
+
+  const handleCancelRemove = () => {
+    setConfirmRemoveTarget(null);
+  };
+
+  const handleConfirmRemove = () => {
+    if (!confirmRemoveTarget) return;
     setEmployees((prev) =>
-      prev.filter((e) => e.registryNumber !== registryNumber),
+      prev.filter(
+        (e) => e.registryNumber !== confirmRemoveTarget.registryNumber,
+      ),
     );
+    setConfirmRemoveTarget(null);
   };
 
   return (
@@ -205,7 +217,7 @@ export default function EmployeesPage({ employees, setEmployees }) {
                       </button>
                       <button
                         className="icon-btn danger"
-                        onClick={() => handleRemove(e.registryNumber)}
+                        onClick={() => handleRemove(e)}
                         title="Remove"
                       >
                         <Trash2 size={15} />
@@ -225,6 +237,49 @@ export default function EmployeesPage({ employees, setEmployees }) {
           onSave={handleSave}
           onClose={() => setModalState(null)}
         />
+      )}
+
+      {confirmRemoveTarget && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>
+                <Trash2 size={18} /> Remove Employee
+              </h3>
+              <button className="icon-btn" onClick={handleCancelRemove}>
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            <div className="employee-form">
+              <p>
+                Remove{" "}
+                <strong>
+                  {confirmRemoveTarget.familyName},{" "}
+                  {confirmRemoveTarget.firstName}
+                </strong>{" "}
+                ({confirmRemoveTarget.registryNumber}) from the roster?
+              </p>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={handleCancelRemove}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={handleConfirmRemove}
+                >
+                  Remove Employee
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

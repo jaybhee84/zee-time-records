@@ -79,31 +79,11 @@ function loadAppInto(win, queryString = '') {
 // instead of the normal app shell. That's the whole point of this
 // architecture: there's nothing else in this window to accidentally leak
 // into a printed page, and nothing to hide via CSS classes/@media print.
-//
-// This replaces the old approach of toggling a `.pdf-capture-mode` class on
-// the VISIBLE main window's <body> and hoping @media-print-style CSS rules
-// hid the right things at the right moment — which broke twice (Electron
-// not reliably applying @media print, then a timing race between the class
-// toggle and the actual paint). A dedicated, minimal window has nothing to
-// race against: we wait for an explicit "I've rendered and painted" signal
-// from that window's own code before capturing anything.
 function createPrintWindow(jobId) {
   return new Promise((resolve, reject) => {
     let settled = false;
 
     const printWin = new BrowserWindow({
-      // A genuinely on-screen window, briefly visible while a job runs.
-      // Several earlier attempts tried to keep this window invisible
-      // (show:false, positioned off-screen, offscreen rendering) — all of
-      // which turned out to be chasing the wrong bug. The real cause of
-      // blank output was a stale global CSS rule left over from an old
-      // print implementation (an `@media print` block in index.css
-      // targeting an element id that no longer exists anywhere), which
-      // hid all content the instant printToPDF() triggered its print-media
-      // rendering pass — regardless of this window's visibility. With that
-      // rule removed, a plain on-screen window works fine and is the
-      // simplest option, so there's no reason to reintroduce the
-      // complexity of hiding it.
       show: true,
       width: 700,
       height: 500,
@@ -210,14 +190,6 @@ function runQuery(sql, params = []) {
 
 async function initDatabase() {
   const SQL = await initSqlJs({
-    // sql.js's default wasm-loading logic guesses a path relative to
-    // wherever its own JS is running from, which isn't reliable once
-    // everything is packed into app.asar — even with the wasm file itself
-    // unpacked via package.json's asarUnpack, sql.js still needs to be
-    // told explicitly where to find it. In a packaged build, unpacked
-    // asar files live alongside app.asar in an app.asar.unpacked sibling
-    // folder under process.resourcesPath; in dev, node_modules is just a
-    // normal folder on disk.
     locateFile: (file) =>
       app.isPackaged
         ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'sql.js', 'dist', file)
@@ -295,9 +267,6 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // Kept enabled for compatibility, though the in-app preview now uses
-      // a Blob object URL (see generate-dtr-pdf-preview) rather than a
-      // data: URI, which is what previously rendered blank in the iframe.
       plugins: true,
     },
   });
@@ -312,6 +281,12 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+// ---------- Application Meta IPCs ----------
+
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
 });
 
 // ---------- USB Dump Import IPCs ----------
@@ -346,21 +321,6 @@ ipcMain.handle('pick-userdat-file', async () => {
   return { filePath, content };
 });
 
-// Lists removable/USB drives so the renderer can offer a dropdown instead of
-// a manual file picker every time.
-//
-// This shells out to PowerShell's Win32_LogicalDisk (DriveType=2 means
-// "removable disk", which is what a USB flash drive reports as) instead of
-// using a native module like `drivelist`. Native modules have to be rebuilt
-// against Electron's exact ABI and that step is a common source of
-// "works in dev, breaks once packaged" failures on Windows — this approach
-// needs no npm install and no build tools, since powershell.exe ships with
-// every supported Windows version.
-//
-// If this ever returns [] (non-Windows platform, PowerShell blocked by
-// policy, etc.), AttendancePage.jsx falls back to its "file_picker" option,
-// which routes through read-usb-file's manual-pick branch below — so USB
-// import still works, it just requires manually browsing to the drive.
 ipcMain.handle('get-usb-drives', async () => {
   if (process.platform !== 'win32') return [];
 
@@ -383,9 +343,6 @@ ipcMain.handle('get-usb-drives', async () => {
     if (!stdout || !stdout.trim()) return [];
 
     let parsed = JSON.parse(stdout);
-    // PowerShell's ConvertTo-Json omits the array wrapper when there's
-    // exactly one result, so a single removable drive comes back as a bare
-    // object instead of a one-item array.
     if (!Array.isArray(parsed)) parsed = [parsed];
 
     return parsed
@@ -400,20 +357,6 @@ ipcMain.handle('get-usb-drives', async () => {
   }
 });
 
-// Reads a named file (attlog.dat, user.dat, department.dat, ...) off a
-// detected USB drive, or prompts the user to pick it manually when
-// drivePath is "file_picker" / unset. Always returns raw bytes as base64 —
-// deliberately NOT decoded as utf-8 here, because user.dat and
-// department.dat are binary (fixed-width records), and reading them with an
-// encoding assumption would corrupt the bytes before the renderer-side
-// parser ever sees them. Text files like attlog.dat are decoded back to a
-// string on the renderer side instead (see parseDeviceFiles.js).
-//
-// ZKTeco prefixes attlog.dat with a machine/serial number when it exports
-// (e.g. "1_attlog.dat", "2_attlog.dat") but leaves user.dat/department.dat
-// unprefixed — so an exact-name lookup for attlog.dat can miss a real file
-// that's sitting right there. If the exact name isn't found, this falls
-// back to a case-insensitive suffix match against everything on the drive.
 ipcMain.handle('read-usb-file', async (event, { drivePath, fileName } = {}) => {
   try {
     let filePath;
@@ -457,10 +400,6 @@ ipcMain.handle('read-usb-file', async (event, { drivePath, fileName } = {}) => {
   }
 });
 
-// Serves stored print job data (employee names + already-computed DTR rows)
-// to the hidden print window once it loads and asks for its own jobId's
-// payload. See createPrintWindow()/runPrintJob() above for how jobs get
-// stashed here in the first place.
 ipcMain.handle('get-print-job-data', async (event, jobId) => {
   return pendingPrintJobs.get(jobId) || null;
 });
@@ -516,18 +455,58 @@ ipcMain.handle('auth-create-user', async (event, { username, password } = {}) =>
   return { success: true };
 });
 
+ipcMain.handle('auth-list-users', async () => {
+  return getAll('SELECT id, username FROM users ORDER BY username COLLATE NOCASE');
+});
+
+ipcMain.handle('auth-update-user', async (event, { id, username, password } = {}) => {
+  if (id === undefined || id === null) {
+    return { success: false, error: 'Missing user id.' };
+  }
+  if (!username?.trim()) {
+    return { success: false, error: 'Username cannot be empty.' };
+  }
+
+  const existing = getOne('SELECT * FROM users WHERE username = ? AND id != ?', [
+    username.trim(),
+    id,
+  ]);
+  if (existing) {
+    return { success: false, error: 'That username already exists.' };
+  }
+
+  if (password) {
+    runQuery('UPDATE users SET username = ?, passwordHash = ? WHERE id = ?', [
+      username.trim(),
+      hashPassword(password),
+      id,
+    ]);
+  } else {
+    runQuery('UPDATE users SET username = ? WHERE id = ?', [username.trim(), id]);
+  }
+
+  return { success: true };
+});
+
+ipcMain.handle('auth-delete-user', async (event, target) => {
+  const id =
+    target && typeof target === 'object' ? target.id : target;
+
+  if (id === undefined || id === null) {
+    return { success: false, error: 'Missing user id.' };
+  }
+
+  const existing = getOne('SELECT * FROM users WHERE id = ?', [id]);
+  if (!existing) {
+    return { success: false, error: 'That account no longer exists.' };
+  }
+
+  runQuery('DELETE FROM users WHERE id = ?', [id]);
+  return { success: true };
+});
+
 // ---------- Vinea (.mdb) Employee Import ----------
 
-// Reads Vinea's raw in/out punch log (the "DTR" table — one row per clock
-// in/out event) and inserts it directly into this app's `punches` table.
-// Vinea splits date and time across two separate DateTime columns (Date
-// holds the real date with a dummy 00:00:00 time; Time holds the real
-// time-of-day tacked onto Access's null-date epoch), so we recombine them
-// here into a single "YYYY-MM-DD HH:MM:SS" timestamp, which is the format
-// the rest of this app (get-punches / save-punches) expects.
-//
-// Runs entirely inside the main process (not round-tripped through IPC)
-// since a full attendance history can easily be 100k+ rows.
 function importVineaPunches(reader) {
   const tableNames = reader.getTableNames();
   if (!tableNames.includes('DTR')) {
@@ -536,8 +515,6 @@ function importVineaPunches(reader) {
 
   const dtrRows = reader.getTable('DTR').getData();
 
-  // Dedupe against what's already in the local database so re-running an
-  // import doesn't double up punches.
   const existing = new Set();
   getAll('SELECT pin, timestamp FROM punches').forEach((r) => {
     existing.add(`${r.pin}|${r.timestamp}`);
@@ -605,9 +582,6 @@ ipcMain.handle('import-vinea-employees', async () => {
   const filePath = openResult.filePaths[0];
 
   try {
-    // mdb-reader ships as an ESM-only package, so it can't be loaded with
-    // require() from this CommonJS file — dynamic import() works fine
-    // from CJS at runtime, so we load it lazily here instead.
     const { default: MDBReader } = await import('mdb-reader');
 
     const buffer = fs.readFileSync(filePath);
@@ -664,9 +638,6 @@ ipcMain.handle('import-vinea-employees', async () => {
 });
 
 // ---------- Custom Sub-Groups ----------
-// User-added sub-groups (beyond the app's built-in defaults) live here so
-// they persist across restarts and travel with a full .db backup/restore,
-// the same as everything else in this app.
 
 ipcMain.handle('load-custom-subgroups', async () => {
   try {
@@ -837,10 +808,6 @@ ipcMain.handle('export-dtr-pdf', async (event, payload = {}) => {
   return saveResult.filePath;
 });
 
-// Renders the requested employees' DTR data (in the hidden print window) to
-// a PDF and hands the bytes back to the renderer so it can be shown in an
-// in-app preview. This exists because Electron's native window.print()
-// dialog on Windows doesn't render a visual preview pane.
 ipcMain.handle('generate-dtr-pdf-preview', async (event, payload = {}) => {
   const { employees, year, month } = payload;
   try {
@@ -854,9 +821,6 @@ ipcMain.handle('generate-dtr-pdf-preview', async (event, payload = {}) => {
   }
 });
 
-// Writes the PDF to a temp file and opens it in the user's default PDF
-// viewer (Edge/Acrobat/Preview/etc.), which has a real print-preview pane,
-// unlike Electron's built-in print dialog.
 ipcMain.handle('open-dtr-pdf-external', async (event, payload = {}) => {
   const { employees, year, month, suggestedName } = payload;
   try {
@@ -877,8 +841,6 @@ ipcMain.handle('open-dtr-pdf-external', async (event, payload = {}) => {
   }
 });
 
-// Returns the list of printers available to the OS so the renderer can show
-// an in-app printer picker (name + displayName + isDefault/status flags).
 ipcMain.handle('get-printers', async () => {
   try {
     return await mainWindow.webContents.getPrintersAsync();
@@ -888,8 +850,6 @@ ipcMain.handle('get-printers', async () => {
   }
 });
 
-// Prints the requested employees' DTR data (rendered in the hidden print
-// window) directly to a chosen printer, silently (no OS print dialog).
 ipcMain.handle('print-dtr', async (event, payload = {}) => {
   const { employees, year, month, deviceName } = payload;
   try {

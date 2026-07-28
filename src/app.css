@@ -1,0 +1,34 @@
+/* Restored original blue accent variable */
+:root {
+  /* ... keep your other color tokens ... */
+  --color-accent-blue: #2f6fed;
+}
+
+/* =========================================================================
+   Sidebar — Restored Original Blue Brand Mark & Active Tab
+   ========================================================================= */
+
+.sidebar-brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-blue);
+  /* Restored blue (#2f6fed) */
+  color: #ffffff;
+  /* Restored white text */
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.sidebar-nav-item.active {
+  background: rgba(47, 111, 237, 0.18);
+  color: #ffffff;
+  box-shadow: inset 3px 0 0 var(--color-accent-blue);
+  /* Blue active bar */
+}
