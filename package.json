@@ -1,6 +1,6 @@
 {
   "name": "zee-time-records-app",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "description": "DTR generator that imports ZKTeco USB flash-disk attendance dumps and produces CSC Form 48 style Daily Time Records.",
   "main": "electron/main.js",
   "scripts": {
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "lucide-react": "^0.400.0",
+    "mdb": "^0.1.0",
     "pdf-to-printer": "^5.8.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -19,9 +20,9 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^8.2.2",
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3",
-    "vite": "^5.4.0",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.1.5",
     "wait-on": "^7.2.0"
   },
   "build": {
@@ -29,14 +30,36 @@
     "productName": "DepEd DTR Generator",
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "src/assets/icon.ico"
     ],
     "asarUnpack": [
-      "**/node_modules/better-sqlite3/**/*",
-      "**/node_modules/pdf-to-printer/**/*"
+      "**/node_modules/pdf-to-printer/**/*",
+      "**/node_modules/sql.js/dist/sql-wasm.wasm"
     ],
     "directories": {
       "output": "release"
-    }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "src/assets/icon.ico"
+    },
+   "nsis": {
+  "oneClick": false,
+  "allowToChangeInstallationDirectory": true,
+  "createDesktopShortcut": true,
+  "createStartMenuShortcut": true,
+  "shortcutName": "DepEd DTR Generator",
+  "perMachine": true,
+  "runAfterFinish": true,
+  "allowElevation": true
+}
   }
 }

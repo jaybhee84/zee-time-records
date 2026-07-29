@@ -12,6 +12,8 @@ import {
   AlertTriangle,
   Download,
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   groupByPin,
@@ -87,6 +89,12 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
   const [openingExternal, setOpeningExternal] = useState(false);
   const [savingPdf, setSavingPdf] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+
+  // Which employee (index into targetEmployees) the on-screen preview is
+  // currently showing. The screen preview shows ONE employee at a time
+  // with Prev/Next arrows rather than stacking every matching employee's
+  // full CS Form 48 card in one long scrolling page.
+  const [previewIndex, setPreviewIndex] = useState(0);
 
   // Printer selection state
   const [printers, setPrinters] = useState([]);
@@ -203,6 +211,28 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
       (e) => e?.registryNumber === selectedEmployeeReg,
     );
   }, [categoryEmployees, selectedEmployeeReg]);
+
+  // Keep the preview pointer valid whenever the filtered list changes size
+  // (new filter picked, employee count changed, etc.) instead of pointing
+  // at a now-nonexistent index.
+  useEffect(() => {
+    setPreviewIndex(0);
+  }, [category, subCategory, selectedEmployeeReg]);
+
+  const clampedPreviewIndex =
+    targetEmployees.length === 0
+      ? 0
+      : Math.min(previewIndex, targetEmployees.length - 1);
+
+  const activePreviewEmployee = targetEmployees[clampedPreviewIndex] || null;
+
+  const goToPreviousEmployee = () => {
+    setPreviewIndex((idx) => Math.max(0, idx - 1));
+  };
+
+  const goToNextEmployee = () => {
+    setPreviewIndex((idx) => Math.min(targetEmployees.length - 1, idx + 1));
+  };
 
   const monthNameFor = (m) =>
     new Date(2000, m - 1, 1).toLocaleString("en-US", { month: "long" });
@@ -441,22 +471,21 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
         }
 
         .controls-grid {
-          display: flex;
-          flex-wrap: wrap;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
           gap: 16px;
-          align-items: flex-end;
+          align-items: end;
         }
 
         .form-group {
           display: flex;
           flex-direction: column;
           gap: 6px;
-          min-width: 160px;
+          min-width: 0;
         }
 
         .form-group-grow {
-          flex-grow: 1;
-          min-width: 240px;
+          grid-column: span 2;
         }
 
         .form-label {
@@ -519,6 +548,64 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
           align-items: center;
           gap: 10px;
           margin-bottom: 14px;
+          flex-wrap: wrap;
+        }
+
+        .preview-pager {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-left: auto;
+        }
+
+        .pager-arrow-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px;
+          height: 30px;
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          color: #0f172a;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .pager-arrow-btn:hover:not(:disabled) {
+          background: #f8fafc;
+          border-color: #94a3b8;
+        }
+
+        .pager-arrow-btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+
+        .pager-count {
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #475569;
+          min-width: 48px;
+          text-align: center;
+        }
+
+        .paper-elevation-card {
+          background: #ffffff;
+          padding: 16px;
+          border-radius: 8px;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+          display: block;
+          border: 1px solid #e2e8f0;
+          /* Cap the on-screen preview to roughly the same width as ONE
+             half of the printed page (see .cs48-double-page .cs48-card
+             in csForm48.css, which renders two of these side by side per
+             sheet). Without this the card has nothing constraining its
+             width, so it stretches to fill the container and reads as
+             much bigger/blurrier than what actually prints. */
+          width: 100%;
+          max-width: 460px;
+          margin: 0 auto;
         }
 
         .badge-pill {
@@ -542,15 +629,6 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
           color: #475569;
           padding: 4px 10px;
           border-radius: 6px;
-        }
-
-        .paper-elevation-card {
-          background: #ffffff;
-          padding: 16px;
-          border-radius: 8px;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-          display: inline-block;
-          border: 1px solid #e2e8f0;
         }
 
         .btn-secondary-modern {
@@ -818,35 +896,41 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
               </div>
             )}
 
-            {/* 3rd Dropdown: Select Employee */}
-            <div className="form-group form-group-grow">
-              <label className="form-label">
-                <User size={14} /> Select Employee
-              </label>
-              <select
-                className="form-select"
-                value={selectedEmployeeReg}
-                onChange={(e) => {
-                  setHasInteracted(true);
-                  setSelectedEmployeeReg(e.target.value);
-                }}
-              >
-                <option value="all">ALL</option>
-                {categoryEmployees.map((e) => (
-                  <option
-                    key={e.registryNumber || Math.random()}
-                    value={e.registryNumber || ""}
-                  >
-                    {(e.familyName || "Unnamed").toUpperCase()},{" "}
-                    {(e.firstName || "Employee").toUpperCase()}{" "}
-                    {e.middleInitial
-                      ? `${e.middleInitial.toUpperCase()}. `
-                      : ""}
-                    ({e.subGroup || "N/A"})
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* 3rd Dropdown: Select Employee — only shown once the user has
+                fully narrowed down: a category AND its subcategory
+                (Grade Level / Admin-Job Order) both chosen, not left on
+                "ALL". Before that, the list would just be the mixed,
+                unfiltered roster, which isn't a useful picker yet. */}
+            {subCategory !== "all" && (
+              <div className="form-group form-group-grow">
+                <label className="form-label">
+                  <User size={14} /> Select Employee
+                </label>
+                <select
+                  className="form-select"
+                  value={selectedEmployeeReg}
+                  onChange={(e) => {
+                    setHasInteracted(true);
+                    setSelectedEmployeeReg(e.target.value);
+                  }}
+                >
+                  <option value="all">ALL</option>
+                  {categoryEmployees.map((e) => (
+                    <option
+                      key={e.registryNumber || Math.random()}
+                      value={e.registryNumber || ""}
+                    >
+                      {(e.familyName || "Unnamed").toUpperCase()},{" "}
+                      {(e.firstName || "Employee").toUpperCase()}{" "}
+                      {e.middleInitial
+                        ? `${e.middleInitial.toUpperCase()}. `
+                        : ""}
+                      ({e.subGroup || "N/A"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Month & Year Selectors */}
             <div className="form-group">
@@ -903,33 +987,36 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
           </div>
         )}
 
-        {targetEmployees.map((emp) => {
-          const devPin = emp.staffNoOnDev || emp.registryNumber;
+        {hasInteracted &&
+          activePreviewEmployee &&
+          (() => {
+            const emp = activePreviewEmployee;
+            const devPin = emp.staffNoOnDev || emp.registryNumber;
 
-          const familyStr = (emp.familyName || "").toUpperCase();
-          const firstStr = (emp.firstName || "").toUpperCase();
-          const middleStr = emp.middleInitial
-            ? `${emp.middleInitial.toUpperCase()}.`
-            : "";
-          const empName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
+            const familyStr = (emp.familyName || "").toUpperCase();
+            const firstStr = (emp.firstName || "").toUpperCase();
+            const middleStr = emp.middleInitial
+              ? `${emp.middleInitial.toUpperCase()}.`
+              : "";
+            const empName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
 
-          const rows = buildMonthlyDTR(
-            byPin[normalizePin(devPin)] || [],
-            year,
-            month,
-          );
+            const rows = buildMonthlyDTR(
+              byPin[normalizePin(devPin)] || [],
+              year,
+              month,
+            );
 
-          return (
-            <div
-              key={emp.registryNumber || Math.random()}
-              className="cs48-employee-block"
-            >
-              {/* Screen View — purely a UX preview. Actual printing happens
-                  in a separate hidden window (see PrintRenderWindow.jsx),
-                  which gets sent this same computed data via IPC, so what
-                  gets printed no longer depends on anything being mounted
-                  in this page's own DOM. */}
-              {hasInteracted && (
+            return (
+              <div
+                key={emp.registryNumber || "preview"}
+                className="cs48-employee-block"
+              >
+                {/* Screen View — purely a UX preview, one employee at a time.
+                  Actual printing happens in a separate hidden window (see
+                  PrintRenderWindow.jsx), which gets sent the FULL
+                  targetEmployees batch via IPC regardless of which single
+                  employee is currently shown here, so what gets printed
+                  doesn't depend on this pagination state at all. */}
                 <div className="preview-wrapper">
                   <div className="preview-badge-header">
                     {selectedEmployeeReg !== "all" && (
@@ -940,6 +1027,34 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                     <span className="subgroup-tag">
                       {emp.subGroup || "N/A"}
                     </span>
+
+                    {targetEmployees.length > 1 && (
+                      <div className="preview-pager">
+                        <button
+                          type="button"
+                          className="pager-arrow-btn"
+                          onClick={goToPreviousEmployee}
+                          disabled={clampedPreviewIndex === 0}
+                          aria-label="Previous employee"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <span className="pager-count">
+                          {clampedPreviewIndex + 1} / {targetEmployees.length}
+                        </span>
+                        <button
+                          type="button"
+                          className="pager-arrow-btn"
+                          onClick={goToNextEmployee}
+                          disabled={
+                            clampedPreviewIndex === targetEmployees.length - 1
+                          }
+                          aria-label="Next employee"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="paper-elevation-card">
@@ -952,10 +1067,9 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                     />
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
+              </div>
+            );
+          })()}
       </div>
 
       {/* PDF Preview Modal */}

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { UserCheck } from "lucide-react";
+import React, { useEffect, useState, useRef } from "react";
+import { UserCheck, AlertTriangle } from "lucide-react";
 import Login from "./components/Login.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import EmployeesPage from "./components/EmployeesPage.jsx";
@@ -18,10 +18,18 @@ export default function App() {
   const [employees, setEmployees] = useState([]);
   const [punches, setPunches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const [welcomeMessage, setWelcomeMessage] = useState(null);
+  const isInitialMount = useRef(true);
 
-  // Global fix: release focus safely on click without mutating window.dtrApi
+  // Check early for dedicated print windows
+  const printParams = new URLSearchParams(window.location.search);
+  if (printParams.get("print") === "1") {
+    return <PrintRenderWindow jobId={printParams.get("jobId")} />;
+  }
+
+  // Release focus safely on document click
   useEffect(() => {
     const handlePointerDown = (e) => {
       const active = document.activeElement;
@@ -33,42 +41,58 @@ export default function App() {
     };
 
     window.addEventListener("pointerdown", handlePointerDown, true);
-    return () => {
+    return () =>
       window.removeEventListener("pointerdown", handlePointerDown, true);
-    };
   }, []);
 
+  // Welcome message auto-dismiss
   useEffect(() => {
     if (!welcomeMessage) return;
     const timer = setTimeout(() => setWelcomeMessage(null), 3500);
     return () => clearTimeout(timer);
   }, [welcomeMessage]);
 
+  // Fetch initial data on login
   useEffect(() => {
     if (!currentUser) return;
 
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
 
-    Promise.all([
-      window.dtrApi?.loadEmployees(),
-      window.dtrApi?.getPunches({}),
-    ]).then(([loadedEmployees, loadedPunches]) => {
-      if (cancelled) return;
-      setEmployees(loadedEmployees || []);
-      setPunches(loadedPunches || []);
+    if (!window.dtrApi) {
+      setLoadError(
+        "Desktop API (dtrApi) is unavailable. Please check preload settings.",
+      );
       setLoading(false);
-    });
+      return;
+    }
+
+    Promise.all([window.dtrApi.loadEmployees(), window.dtrApi.getPunches({})])
+      .then(([loadedEmployees, loadedPunches]) => {
+        if (cancelled) return;
+        setEmployees(loadedEmployees || []);
+        setPunches(loadedPunches || []);
+        setLoading(false);
+        isInitialMount.current = false;
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to load application data:", err);
+        setLoadError("Failed to load records from storage.");
+        setLoading(false);
+      });
 
     return () => {
       cancelled = true;
     };
   }, [currentUser]);
 
+  // Safe auto-save: skip initial mount to prevent overwriting existing DB with defaults
   useEffect(() => {
-    if (!currentUser || loading) return;
+    if (!currentUser || loading || loadError || isInitialMount.current) return;
     window.dtrApi?.saveEmployees(employees);
-  }, [employees, currentUser, loading]);
+  }, [employees, currentUser, loading, loadError]);
 
   const handleLoginSuccess = (username) => {
     setCurrentUser(username);
@@ -81,12 +105,9 @@ export default function App() {
     setPunches([]);
     setActiveTab("employees");
     setWelcomeMessage(null);
+    setLoadError(null);
+    isInitialMount.current = true;
   };
-
-  const printParams = new URLSearchParams(window.location.search);
-  if (printParams.get("print") === "1") {
-    return <PrintRenderWindow jobId={printParams.get("jobId")} />;
-  }
 
   if (!currentUser) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
@@ -119,7 +140,12 @@ export default function App() {
 
       <main className="main-content">
         {loading ? (
-          <p className="hint">Loading...</p>
+          <p className="hint">Loading application data...</p>
+        ) : loadError ? (
+          <div className="error-banner">
+            <AlertTriangle size={20} />
+            <span>{loadError}</span>
+          </div>
         ) : (
           <>
             {activeTab === "employees" && (
@@ -143,8 +169,17 @@ export default function App() {
             {activeTab === "printDtr" && (
               <PrintDTRPage employees={employees} punches={punches} />
             )}
-            {activeTab === "backup" && <BackupView />}
-            {activeTab === "userAccount" && <UserAccountPage />}
+            {activeTab === "backup" && (
+              <BackupView
+                employees={employees}
+                setEmployees={setEmployees}
+                punches={punches}
+                setPunches={setPunches}
+              />
+            )}
+            {activeTab === "userAccount" && (
+              <UserAccountPage currentUser={currentUser} />
+            )}
           </>
         )}
       </main>

@@ -176,15 +176,42 @@ export function formatOfficialHours(schedule) {
 /**
  * Computes total undertime (in minutes) for one DTR day row against an
  * Official Time schedule: { amIn, amOut, pmIn, pmOut, graceMinutes } in
- * 24-hour "HH:MM". Counts late AM arrival, early AM (pre-lunch) departure,
- * late PM (post-lunch) arrival, and early PM departure — each only past the
- * configured grace period. A missing punch (employee didn't tap in/out for
- * that half) is skipped rather than penalized, matching buildMonthlyDTR's
- * existing "Arrival only" convention for incomplete halves.
+ * 24-hour "HH:MM".
+ *
+ * This is a WHOLE-DAY NET model, not four independent boundary checks:
+ * total minutes actually rendered for the day is compared against total
+ * minutes required, and only the shortfall counts as undertime. This
+ * means a late AM arrival is fully forgiven if the employee compensates
+ * by staying later in the afternoon — e.g. official time is 7:00-4:00,
+ * employee arrives 7:10, employee leaves 4:10 → 0 undertime, because the
+ * total span worked still equals the required total, even though they
+ * were "late" that morning.
+ *
+ * `graceMinutes` is NOT used in this calculation at all. It only decides
+ * whether a punch would be labeled "late" for display/reporting purposes
+ * elsewhere — it does not excuse anyone from making up lost time. A 10
+ * minute late arrival with a 15-minute grace period still creates a
+ * 10-minute shortfall that must be worked off later the same day, or it
+ * shows as undertime; grace just means that arrival itself isn't flagged
+ * as tardy.
+ *
+ * Missing punches are handled two ways:
+ *  - If BOTH punches for a half are missing (no lunch-out/lunch-in at
+ *    all — i.e. the employee just punches once in the morning and once
+ *    in the afternoon with no registered lunch break), the day is
+ *    treated as one continuous span from amArrival to pmArrival (see
+ *    buildMonthlyDTR's doc comment — a lone PM punch is stored as
+ *    `pmArrival`, not `pmDeparture`), minus the scheduled lunch gap.
+ *    This avoids incorrectly flagging straight-through workers as
+ *    absent all afternoon just because they never tapped for lunch.
+ *  - Any other incomplete/unresolvable half (e.g. an employee who
+ *    simply never punched again after their AM arrival) contributes 0
+ *    rendered minutes for that half, same as before — a genuine missing
+ *    half is real, unexplained lost time and should surface as
+ *    undertime rather than being silently excused.
  */
 export function computeUndertimeMinutes(row, schedule) {
   if (!schedule) return 0;
-  const grace = Number(schedule.graceMinutes) || 0;
 
   const boundAmIn = timeStrToMinutes(schedule.amIn);
   const boundAmOut = timeStrToMinutes(schedule.amOut);
@@ -196,22 +223,45 @@ export function computeUndertimeMinutes(row, schedule) {
   const pmArrival = timeStrToMinutes(row.pmArrival);
   const pmDeparture = timeStrToMinutes(row.pmDeparture);
 
-  let minutes = 0;
+  const haveAmBound = boundAmIn != null && boundAmOut != null;
+  const havePmBound = boundPmIn != null && boundPmOut != null;
+  if (!haveAmBound && !havePmBound) return 0;
 
-  if (amArrival != null && boundAmIn != null && amArrival > boundAmIn + grace) {
-    minutes += amArrival - boundAmIn;
-  }
-  if (amDeparture != null && boundAmOut != null && amDeparture < boundAmOut - grace) {
-    minutes += boundAmOut - amDeparture;
-  }
-  if (pmArrival != null && boundPmIn != null && pmArrival > boundPmIn + grace) {
-    minutes += pmArrival - boundPmIn;
-  }
-  if (pmDeparture != null && boundPmOut != null && pmDeparture < boundPmOut - grace) {
-    minutes += boundPmOut - pmDeparture;
+  const requiredMinutes =
+    (haveAmBound ? boundAmOut - boundAmIn : 0) +
+    (havePmBound ? boundPmOut - boundPmIn : 0);
+
+  let renderedMinutes;
+
+  if (
+    amArrival != null &&
+    amDeparture == null &&
+    pmArrival != null &&
+    pmDeparture == null
+  ) {
+    // Straight-through day: one AM punch, one PM punch, nothing in
+    // between. Treat pmArrival as the day's actual departure (see
+    // comment above) and exclude the scheduled lunch gap so an
+    // unregistered lunch break doesn't read as unworked time.
+    const lunchGapMinutes =
+      haveAmBound && havePmBound ? Math.max(0, boundPmIn - boundAmOut) : 0;
+    renderedMinutes = Math.max(0, pmArrival - amArrival - lunchGapMinutes);
+  } else {
+    const amRendered =
+      amArrival != null && amDeparture != null
+        ? Math.max(0, amDeparture - amArrival)
+        : 0;
+    const pmRendered =
+      pmArrival != null && pmDeparture != null
+        ? Math.max(0, pmDeparture - pmArrival)
+        : 0;
+    renderedMinutes = amRendered + pmRendered;
   }
 
-  return Math.max(0, Math.round(minutes));
+  const shortfall = requiredMinutes - renderedMinutes;
+  if (shortfall <= 0) return 0;
+
+  return Math.round(shortfall);
 }
 
 /**

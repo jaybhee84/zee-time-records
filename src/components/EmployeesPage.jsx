@@ -28,6 +28,8 @@ const TEACHING_SUBGROUPS = [
   "Substitute Teacher",
 ];
 
+const NON_TEACHING_SUBGROUPS = ["Admin", "Job Order"];
+
 const isTeachingSubgroup = (subGroup = "") => {
   const normalized = subGroup.trim().toLowerCase();
   return (
@@ -38,6 +40,43 @@ const isTeachingSubgroup = (subGroup = "") => {
   );
 };
 
+const isNonTeachingSubgroup = (subGroup = "") => {
+  const normalized = subGroup.trim().toLowerCase();
+  return (
+    NON_TEACHING_SUBGROUPS.some((sg) => sg.toLowerCase() === normalized) ||
+    !isTeachingSubgroup(subGroup)
+  );
+};
+
+// Whether a specific employee's subGroup matches a chosen sub-group filter
+// value, applying the same loose-prefix matching PrintDTRPage.jsx uses
+// (e.g. "Subject Teacher" also catches "Subject Teacher - Math", SNED/SPED
+// are treated as the same bucket).
+const subGroupMatches = (empSubGroup = "", filterValue) => {
+  const normSg = empSubGroup.trim().toLowerCase();
+  const normFilter = filterValue.trim().toLowerCase();
+
+  if (
+    (normFilter === "sned" || normFilter === "sped") &&
+    (normSg === "sned" || normSg === "sped")
+  ) {
+    return true;
+  }
+  if (
+    normFilter.startsWith("subject teacher") &&
+    normSg.startsWith("subject teacher")
+  ) {
+    return true;
+  }
+  if (
+    normFilter.startsWith("substitute teacher") &&
+    normSg.startsWith("substitute teacher")
+  ) {
+    return true;
+  }
+  return normSg === normFilter;
+};
+
 const resolveGroup = (e) => {
   if (e.group === "Teaching" || e.group === "Non-Teaching") return e.group;
   return isTeachingSubgroup(e.subGroup) ? "Teaching" : "Non-Teaching";
@@ -46,7 +85,44 @@ const resolveGroup = (e) => {
 export default function EmployeesPage({ employees, setEmployees }) {
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
+  const [subGroupFilter, setSubGroupFilter] = useState("all");
   const [modalState, setModalState] = useState(null);
+
+  const handleGroupFilterChange = (e) => {
+    setGroupFilter(e.target.value);
+    setSubGroupFilter("all");
+  };
+
+  // Dynamically include any custom subgroups actually present on the
+  // roster, on top of the known defaults — same approach as
+  // PrintDTRPage.jsx's teachingSubgroupOptions/nonTeachingSubgroupOptions.
+  const subGroupOptions = useMemo(() => {
+    if (groupFilter === "Teaching") {
+      const list = [...TEACHING_SUBGROUPS];
+      employees.forEach((emp) => {
+        const sg = emp?.subGroup?.trim();
+        if (sg && isTeachingSubgroup(sg)) {
+          if (!list.some((item) => item.toLowerCase() === sg.toLowerCase())) {
+            list.push(sg);
+          }
+        }
+      });
+      return list;
+    }
+    if (groupFilter === "Non-Teaching") {
+      const list = [...NON_TEACHING_SUBGROUPS];
+      employees.forEach((emp) => {
+        const sg = emp?.subGroup?.trim();
+        if (sg && isNonTeachingSubgroup(sg)) {
+          if (!list.some((item) => item.toLowerCase() === sg.toLowerCase())) {
+            list.push(sg);
+          }
+        }
+      });
+      return list;
+    }
+    return [];
+  }, [employees, groupFilter]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -55,6 +131,14 @@ export default function EmployeesPage({ employees, setEmployees }) {
       if (groupFilter !== "all" && resolveGroup(e) !== groupFilter)
         return false;
 
+      if (
+        groupFilter !== "all" &&
+        subGroupFilter !== "all" &&
+        !subGroupMatches(e.subGroup, subGroupFilter)
+      ) {
+        return false;
+      }
+
       if (!q) return true;
       return (
         e.familyName?.toLowerCase().includes(q) ||
@@ -62,7 +146,7 @@ export default function EmployeesPage({ employees, setEmployees }) {
         e.registryNumber?.toLowerCase().includes(q)
       );
     });
-  }, [employees, search, groupFilter]);
+  }, [employees, search, groupFilter, subGroupFilter]);
 
   const registryNumbers = employees.map((e) => e.registryNumber);
 
@@ -93,11 +177,31 @@ export default function EmployeesPage({ employees, setEmployees }) {
           <select
             className="group-filter-select"
             value={groupFilter}
-            onChange={(e) => setGroupFilter(e.target.value)}
+            onChange={handleGroupFilterChange}
           >
             <option value="all">All Groups</option>
             <option value="Teaching">Teaching</option>
             <option value="Non-Teaching">Non-Teaching</option>
+          </select>
+          <select
+            className="group-filter-select"
+            value={subGroupFilter}
+            onChange={(e) => setSubGroupFilter(e.target.value)}
+            disabled={groupFilter === "all"}
+            title={
+              groupFilter === "all"
+                ? "Choose Teaching or Non-Teaching first"
+                : undefined
+            }
+          >
+            <option value="all">
+              {groupFilter === "all" ? "All Sub-Groups" : "All"}
+            </option>
+            {subGroupOptions.map((sg) => (
+              <option key={sg} value={sg}>
+                {sg}
+              </option>
+            ))}
           </select>
           <div className="search-box">
             <Search size={16} />
