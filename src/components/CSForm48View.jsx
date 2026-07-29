@@ -1,17 +1,35 @@
 import React from "react";
 import "./csForm48.css";
 
+// Converts a logged time value like "07:59 AM" to "07:59 am" — plain
+// lowercase am/pm, no special styling.
+function formatTimeCell(value) {
+  if (!value) return "";
+  return String(value).replace(/\b(AM|PM)\b/i, (m) => m.toLowerCase());
+}
+
+// Adjust this one value to resize the Day/Date column. Accepts any CSS
+// width value: "6%", "24px", "1.5rem", etc. This is applied as an inline
+// style, so it always overrides csForm48.css — no need to touch the CSS
+// file just to nudge this one column.
+const DAY_COLUMN_WIDTH = "16%";
+
 // Single CS Form 48 Card Layout
 export function CSForm48Card({
   employeeName,
   year,
+  month,
   monthName,
   rows = [],
   copyType = "OFFICE'S COPY",
   officialHoursArrival = "0.00",
-  regularDays = "30.00",
+  regularDays,
   saturdays = "4.00",
 }) {
+  // Dynamically calculate days in month (defaults to 31 for July)
+  const daysInMonth = year && month ? new Date(year, month, 0).getDate() : 31;
+  const formattedRegularDays = regularDays || `${daysInMonth}.00`;
+
   return (
     <div className="cs48-card">
       <div className="cs48-header-top">
@@ -33,14 +51,18 @@ export function CSForm48Card({
 
       <div className="cs48-meta-table">
         <div className="cs48-meta-left">
-          Official hours for arrival
-          <br />
-          and departure
+          <div>Official hours for arrival</div>
+          <div className="cs48-meta-arrival-row">
+            <span>and departure</span>
+            <span className="cs48-box" style={{ minWidth: "60px" }}>
+              {officialHoursArrival}
+            </span>
+          </div>
         </div>
         <div className="cs48-meta-right">
           <div className="cs48-meta-line">
             <span>Regular days</span>
-            <span className="cs48-box">{regularDays}</span>
+            <span className="cs48-box">{formattedRegularDays}</span>
           </div>
           <div className="cs48-meta-line">
             <span>Saturdays</span>
@@ -50,35 +72,43 @@ export function CSForm48Card({
       </div>
 
       <table className="cs48-table">
+        <colgroup>
+          <col className="col-day" style={{ width: DAY_COLUMN_WIDTH }} />
+          <col className="col-am-arrival" />
+          <col className="col-am-departure" />
+          <col className="col-pm-arrival" />
+          <col className="col-pm-departure" />
+          <col className="col-hour" />
+          <col className="col-minutes" />
+        </colgroup>
         <thead>
           <tr>
-            <th rowSpan={2} style={{ width: "28px" }}>
-              Day
-            </th>
+            <th>Day</th>
             <th colSpan={2}>A M</th>
             <th colSpan={2}>P M</th>
             <th colSpan={2}>UNDERTIME</th>
           </tr>
           <tr>
+            <th>Date</th>
             <th>Arrival</th>
             <th>Departure</th>
             <th>Arrival</th>
             <th>Departure</th>
-            <th style={{ width: "32px" }}>Hours</th>
-            <th style={{ width: "38px" }}>Minutes</th>
+            <th>Hour</th>
+            <th>Minutes</th>
           </tr>
         </thead>
         <tbody>
-          {Array.from({ length: 31 }, (_, i) => {
+          {Array.from({ length: daysInMonth }, (_, i) => {
             const dayNum = i + 1;
             const r = rows.find((item) => item.day === dayNum) || {};
             return (
               <tr key={dayNum}>
                 <td className="center">{dayNum}</td>
-                <td className="center">{r.amArrival || ""}</td>
-                <td className="center">{r.amDeparture || ""}</td>
-                <td className="center">{r.pmArrival || ""}</td>
-                <td className="center">{r.pmDeparture || ""}</td>
+                <td className="center">{formatTimeCell(r.amArrival)}</td>
+                <td className="center">{formatTimeCell(r.amDeparture)}</td>
+                <td className="center">{formatTimeCell(r.pmArrival)}</td>
+                <td className="center">{formatTimeCell(r.pmDeparture)}</td>
                 <td className="center">{r.undertimeHours || ""}</td>
                 <td className="center">{r.undertimeMinutes || ""}</td>
               </tr>
@@ -96,9 +126,12 @@ export function CSForm48Card({
         <div className="cs48-sig-line"></div>
         <div className="cs48-sig-label">Signature</div>
 
-        <div className="cs48-divider">
-          ==========================================
-          <br />
+        {/* Traditional equal sign divider */}
+        <div className="cs48-equal-line">
+          =========================================================================
+        </div>
+
+        <div className="cs48-verified-text">
           VERIFIED as to the prescribed office hours
         </div>
 
@@ -117,17 +150,20 @@ export default function CSForm48View({
   rows,
   isPrintMode = false,
 }) {
-  const monthName = new Date(2000, month - 1, 1).toLocaleString("en-US", {
-    month: "long",
-  });
+  const monthName = new Date(year || 2000, month - 1, 1).toLocaleString(
+    "en-US",
+    {
+      month: "long",
+    },
+  );
 
-  // On screen: Single View
   if (!isPrintMode) {
     return (
       <div className="cs48-screen-wrapper">
         <CSForm48Card
           employeeName={employeeName}
           year={year}
+          month={month}
           monthName={monthName}
           rows={rows}
           copyType="OFFICE'S COPY"
@@ -136,12 +172,12 @@ export default function CSForm48View({
     );
   }
 
-  // On Print: 2 Copies Side-by-Side
   return (
     <div className="cs48-double-page">
       <CSForm48Card
         employeeName={employeeName}
         year={year}
+        month={month}
         monthName={monthName}
         rows={rows}
         copyType="OFFICE'S COPY"
@@ -149,6 +185,7 @@ export default function CSForm48View({
       <CSForm48Card
         employeeName={employeeName}
         year={year}
+        month={month}
         monthName={monthName}
         rows={rows}
         copyType="EMPLOYEE'S COPY"

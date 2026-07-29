@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Users, ScanLine, Printer, LogOut, Database, User } from "lucide-react";
+import { Users, ScanLine, Printer, LogOut, Database, User, Clock } from "lucide-react";
 
 const NAV_ITEMS = [
   { key: "employees", label: "Employees", icon: Users },
   { key: "attendance", label: "Attendance / DTR", icon: ScanLine },
+  { key: "officialTime", label: "Official Time", icon: Clock },
   { key: "printDtr", label: "Print DTR", icon: Printer },
   { key: "backup", label: "Backup & Restore", icon: Database },
   { key: "userAccount", label: "User Account", icon: User },

@@ -5,6 +5,7 @@ import Sidebar from "./components/Sidebar.jsx";
 import EmployeesPage from "./components/EmployeesPage.jsx";
 import AttendancePage from "./components/AttendancePage.jsx";
 import TimesheetPage from "./components/TimesheetPage.jsx";
+import OfficialTimePage from "./components/OfficialTimePage.jsx";
 import PrintDTRPage from "./components/PrintDTRPage.jsx";
 import BackupView from "./components/BackupView.jsx";
 import UserAccountPage from "./components/UserAccountPage.jsx";
@@ -138,6 +139,7 @@ export default function App() {
             {activeTab === "timesheet" && (
               <TimesheetPage onClose={() => setActiveTab("employees")} />
             )}
+            {activeTab === "officialTime" && <OfficialTimePage />}
             {activeTab === "printDtr" && (
               <PrintDTRPage employees={employees} punches={punches} />
             )}

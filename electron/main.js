@@ -6,10 +6,7 @@ const crypto = require('crypto');
 const initSqlJs = require('sql.js');
 
 // Maps Vinea's free-text `Department` values to the subGroup values this
-// app actually filters/displays on (see TEACHING_SUBGROUPS /
-// NON_TEACHING_SUBGROUPS in TimesheetPage.jsx). Keys are normalized
-// (trimmed + uppercased) so casing/whitespace differences in the source
-// data don't cause misses.
+// app actually filters/displays on.
 const VINEA_DEPARTMENT_TO_SUBGROUP = {
   'GRADE 1 TCHR.': 'Grade 1',
   'GRADE 2 TCHR.': 'Grade 2',
@@ -24,9 +21,6 @@ const VINEA_DEPARTMENT_TO_SUBGROUP = {
   'ALIVECONTRL.': 'Alive',
   'ADMIN': 'Admin',
   'JOB ORDER': 'Job Order',
-  // Not one of the app's standard subgroups — best-guess mapped to
-  // "Subject Teacher" since Vinea marks these as TEACHING. Flagged back
-  // to the renderer as "unmapped" so the user can confirm/adjust.
   'NLC VOLUNTEERS': 'Subject Teacher',
 };
 
@@ -47,16 +41,27 @@ let mainWindow;
 let db;
 let dbPath;
 
-// In-memory store for print job payloads (employee names + already-computed
-// DTR rows + year/month), keyed by a fresh id per job. A hidden print
-// window fetches its data from here via 'get-print-job-data' once it loads.
-// Nothing here needs to survive an app restart, so plain in-memory is fine.
+const PAPER_SIZES = {
+  A4: {
+    pdfPageSize: 'A4',
+    printPageSize: 'A4',
+    windowWidth: 794,
+    windowHeight: 1123,
+  },
+  FOLIO: {
+    pdfPageSize: { width: 215900, height: 330200 }, // 8.5in x 13in in microns
+    printPageSize: { width: 215900, height: 330200 },
+    windowWidth: 816,
+    windowHeight: 1248,
+  },
+};
+
+function resolvePaperSize(paperSize) {
+  return PAPER_SIZES[paperSize] || PAPER_SIZES.A4;
+}
+
 const pendingPrintJobs = new Map();
 
-// Loads the app's normal URL/file into a given window, optionally appending
-// a query string. Shared by createWindow() (the visible main window) and
-// createPrintWindow() (the hidden print-only window), so both windows stay
-// in sync with how the app is actually served in dev vs. packaged builds.
 function loadAppInto(win, queryString = '') {
   if (isDev) {
     const url = queryString
@@ -73,21 +78,16 @@ function loadAppInto(win, queryString = '') {
   }
 }
 
-// Creates a hidden BrowserWindow whose only job is rendering CS Form 48
-// print output — no sidebar, no login screen, no modals, because App.jsx
-// detects the `print=1` query flag and renders ONLY <PrintRenderWindow>
-// instead of the normal app shell. That's the whole point of this
-// architecture: there's nothing else in this window to accidentally leak
-// into a printed page, and nothing to hide via CSS classes/@media print.
-function createPrintWindow(jobId) {
+function createPrintWindow(jobId, paperSize = 'A4') {
   return new Promise((resolve, reject) => {
     let settled = false;
+    const { windowWidth, windowHeight } = resolvePaperSize(paperSize);
 
     const printWin = new BrowserWindow({
       show: true,
-      width: 700,
-      height: 500,
-      icon: path.join(__dirname, 'assets', 'ZeeTimeRecords.ico'),
+      width: windowWidth,
+      height: windowHeight,
+      useContentSize: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -130,18 +130,12 @@ function createPrintWindow(jobId) {
   });
 }
 
-// Runs one print job end-to-end: stashes the payload where the hidden
-// window can fetch it, waits for that window to signal it has finished
-// rendering, hands its webContents to `captureFn` (printToPDF or print()),
-// then always tears the window down and clears the stored payload —
-// regardless of whether capture succeeded, so a failed job can't leak a
-// hidden window or leftover data.
-async function runPrintJob(printPayload, captureFn) {
+async function runPrintJob(printPayload, captureFn, paperSize = 'A4') {
   const jobId = crypto.randomUUID();
   pendingPrintJobs.set(jobId, printPayload);
   let printWin;
   try {
-    printWin = await createPrintWindow(jobId);
+    printWin = await createPrintWindow(jobId, paperSize);
     return await captureFn(printWin.webContents);
   } finally {
     pendingPrintJobs.delete(jobId);
@@ -204,7 +198,6 @@ async function initDatabase() {
 
   dbPath = path.join(userDataPath, 'timesheet.db');
 
-  // Load existing DB file from disk if present, else create new
   if (fs.existsSync(dbPath)) {
     const fileBuffer = fs.readFileSync(dbPath);
     db = new SQL.Database(fileBuffer);
@@ -212,7 +205,6 @@ async function initDatabase() {
     db = new SQL.Database();
   }
 
-  // Initialize schema
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -253,8 +245,26 @@ async function initDatabase() {
       UNIQUE(groupName, subGroupName)
     );
 
+    CREATE TABLE IF NOT EXISTS official_time_settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT UNIQUE NOT NULL,
+      amIn TEXT NOT NULL,
+      amOut TEXT NOT NULL,
+      pmIn TEXT NOT NULL,
+      pmOut TEXT NOT NULL,
+      graceMinutes INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_punches_pin_time ON punches (pin, timestamp);
     CREATE INDEX IF NOT EXISTS idx_punches_timestamp ON punches (timestamp);
+  `);
+
+  db.run(`
+    INSERT OR IGNORE INTO official_time_settings (category, amIn, amOut, pmIn, pmOut, graceMinutes)
+    VALUES ('teaching', '07:00', '12:00', '13:00', '16:30', 0);
+
+    INSERT OR IGNORE INTO official_time_settings (category, amIn, amOut, pmIn, pmOut, graceMinutes)
+    VALUES ('nonTeaching', '08:00', '12:00', '13:00', '17:00', 0);
   `);
 
   saveDbToDisk();
@@ -264,7 +274,6 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(__dirname, 'assets', 'ZeeTimeRecords.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -385,11 +394,6 @@ ipcMain.handle('read-usb-file', async (event, { drivePath, fileName } = {}) => {
           entry.toLowerCase().endsWith(target),
         );
         if (matches.length === 0) return null;
-        if (matches.length > 1) {
-          console.warn(
-            `Multiple files match "${fileName}" on ${drivePath}: ${matches.join(', ')}. Using "${matches[0]}".`,
-          );
-        }
         filePath = path.join(drivePath, matches[0]);
       }
     }
@@ -491,8 +495,7 @@ ipcMain.handle('auth-update-user', async (event, { id, username, password } = {}
 });
 
 ipcMain.handle('auth-delete-user', async (event, target) => {
-  const id =
-    target && typeof target === 'object' ? target.id : target;
+  const id = target && typeof target === 'object' ? target.id : target;
 
   if (id === undefined || id === null) {
     return { success: false, error: 'Missing user id.' };
@@ -689,6 +692,69 @@ ipcMain.handle('delete-custom-subgroup', async (event, id) => {
   }
 });
 
+// ---------- Official Time Settings ----------
+
+function getOfficialTimeSettings() {
+  const rows = getAll('SELECT * FROM official_time_settings');
+  const byCategory = {};
+  rows.forEach((r) => {
+    byCategory[r.category] = {
+      amIn: r.amIn,
+      amOut: r.amOut,
+      pmIn: r.pmIn,
+      pmOut: r.pmOut,
+      graceMinutes: r.graceMinutes,
+    };
+  });
+  return byCategory;
+}
+
+ipcMain.handle('get-official-time', async () => {
+  try {
+    return getOfficialTimeSettings();
+  } catch (err) {
+    console.error('Failed to load Official Time settings:', err);
+    return {};
+  }
+});
+
+ipcMain.handle(
+  'save-official-time',
+  async (event, { category, amIn, amOut, pmIn, pmOut, graceMinutes } = {}) => {
+    try {
+      const validCategories = ['teaching', 'nonTeaching'];
+      if (!validCategories.includes(category)) {
+        return { success: false, error: 'Invalid category.' };
+      }
+
+      const timePattern = /^\d{1,2}:\d{2}$/;
+      if (![amIn, amOut, pmIn, pmOut].every((t) => timePattern.test(String(t || '')))) {
+        return { success: false, error: 'All four time fields are required (HH:MM).' };
+      }
+
+      const grace = Math.max(0, parseInt(graceMinutes, 10) || 0);
+
+      db.run(
+        `INSERT INTO official_time_settings (category, amIn, amOut, pmIn, pmOut, graceMinutes)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(category) DO UPDATE SET
+           amIn = excluded.amIn,
+           amOut = excluded.amOut,
+           pmIn = excluded.pmIn,
+           pmOut = excluded.pmOut,
+           graceMinutes = excluded.graceMinutes`,
+        [category, amIn, amOut, pmIn, pmOut, grace],
+      );
+      saveDbToDisk();
+
+      return { success: true, settings: getOfficialTimeSettings() };
+    } catch (err) {
+      console.error('Failed to save Official Time settings:', err);
+      return { success: false, error: err.message };
+    }
+  },
+);
+
 // ---------- Employee Roster IPCs ----------
 
 ipcMain.handle('load-employees', async () => {
@@ -759,14 +825,12 @@ ipcMain.handle('save-punches', async (event, { pin, year, month, newPunches = []
     const monthFormatted = String(month).padStart(2, '0');
     const pattern = `${year}-${monthFormatted}-%`;
 
-    // Clear existing month punches for employee
     db.run('DELETE FROM punches WHERE (pin = ? OR staffNoOnDev = ?) AND timestamp LIKE ?', [
       pin,
       pin,
       pattern,
     ]);
 
-    // Insert new punches
     const insertStmt = db.prepare(
       'INSERT INTO punches (pin, staffNoOnDev, timestamp, rawTime) VALUES (?, ?, ?, ?)'
     );
@@ -784,17 +848,19 @@ ipcMain.handle('save-punches', async (event, { pin, year, month, newPunches = []
   }
 });
 
-// ---------- DTR PDF Export ----------
+// ---------- DTR PDF Export (Borderless Zero Margins) ----------
 
-const DTR_PDF_OPTIONS = {
-  printBackground: true,
-  pageSize: 'A4',
-  landscape: false,
-  margins: { top: 0.3, bottom: 0.3, left: 0.3, right: 0.3 },
-};
+function buildDtrPdfOptions(paperSize = 'A4') {
+  return {
+    printBackground: true,
+    pageSize: resolvePaperSize(paperSize).pdfPageSize,
+    landscape: false,
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+  };
+}
 
 ipcMain.handle('export-dtr-pdf', async (event, payload = {}) => {
-  const { employees, year, month, suggestedName } = payload;
+  const { employees, year, month, suggestedName, paperSize = 'A4' } = payload;
 
   const saveResult = await dialog.showSaveDialog(mainWindow, {
     title: 'Save DTR as PDF',
@@ -803,18 +869,22 @@ ipcMain.handle('export-dtr-pdf', async (event, payload = {}) => {
   });
   if (saveResult.canceled) return null;
 
-  const pdfBuffer = await runPrintJob({ employees, year, month }, (wc) =>
-    wc.printToPDF(DTR_PDF_OPTIONS),
+  const pdfBuffer = await runPrintJob(
+    { employees, year, month },
+    (wc) => wc.printToPDF(buildDtrPdfOptions(paperSize)),
+    paperSize,
   );
   fs.writeFileSync(saveResult.filePath, pdfBuffer);
   return saveResult.filePath;
 });
 
 ipcMain.handle('generate-dtr-pdf-preview', async (event, payload = {}) => {
-  const { employees, year, month } = payload;
+  const { employees, year, month, paperSize = 'A4' } = payload;
   try {
-    const pdfBuffer = await runPrintJob({ employees, year, month }, (wc) =>
-      wc.printToPDF(DTR_PDF_OPTIONS),
+    const pdfBuffer = await runPrintJob(
+      { employees, year, month },
+      (wc) => wc.printToPDF(buildDtrPdfOptions(paperSize)),
+      paperSize,
     );
     return { success: true, data: pdfBuffer.toString('base64') };
   } catch (err) {
@@ -824,10 +894,12 @@ ipcMain.handle('generate-dtr-pdf-preview', async (event, payload = {}) => {
 });
 
 ipcMain.handle('open-dtr-pdf-external', async (event, payload = {}) => {
-  const { employees, year, month, suggestedName } = payload;
+  const { employees, year, month, suggestedName, paperSize = 'A4' } = payload;
   try {
-    const pdfBuffer = await runPrintJob({ employees, year, month }, (wc) =>
-      wc.printToPDF(DTR_PDF_OPTIONS),
+    const pdfBuffer = await runPrintJob(
+      { employees, year, month },
+      (wc) => wc.printToPDF(buildDtrPdfOptions(paperSize)),
+      paperSize,
     );
     const safeName = (suggestedName || 'DTR.pdf').replace(/[/\\?%*:|"<>]/g, '-');
     const tmpPath = path.join(os.tmpdir(), `${Date.now()}-${safeName}`);
@@ -852,32 +924,63 @@ ipcMain.handle('get-printers', async () => {
   }
 });
 
+// Sends a PDF file to a printer without going through Chromium's
+// wc.print() pipeline. wc.print()'s custom margins are frequently ignored
+// by the underlying OS print driver on physical printers (it silently
+// falls back to the driver's own default top margin), even though the
+// exact same margins are respected perfectly by printToPDF(). Printing the
+// already-correct PDF directly sidesteps that unreliable negotiation and
+// guarantees the physical printout matches the on-screen preview.
+function printPdfFile(pdfPath, deviceName) {
+  return new Promise((resolve, reject) => {
+    const { execFile } = require('child_process');
+
+    if (process.platform === 'win32') {
+      // Requires: npm install pdf-to-printer
+      // (bundles SumatraPDF, which prints a PDF at its native page size
+      // with no imposed margins.)
+      const { print } = require('pdf-to-printer');
+      print(pdfPath, { printer: deviceName || undefined, silent: true })
+        .then(resolve)
+        .catch(reject);
+      return;
+    }
+
+    // macOS / Linux: hand off to CUPS directly. lp prints the PDF at its
+    // embedded page size without re-negotiating margins the way Chromium's
+    // print pipeline does.
+    const args = ['-o', 'fit-to-page=false'];
+    if (deviceName) args.push('-d', deviceName);
+    args.push(pdfPath);
+    execFile('lp', args, { timeout: 30000 }, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
 ipcMain.handle('print-dtr', async (event, payload = {}) => {
-  const { employees, year, month, deviceName } = payload;
+  const { employees, year, month, deviceName, paperSize = 'A4' } = payload;
+  let tmpPath;
   try {
-    await runPrintJob(
+    // Reuse the exact same rendering path as the preview/export, which is
+    // already confirmed to produce a flush, gap-free PDF.
+    const pdfBuffer = await runPrintJob(
       { employees, year, month },
-      (wc) =>
-        new Promise((resolve, reject) => {
-          wc.print(
-            {
-              silent: true,
-              printBackground: DTR_PDF_OPTIONS.printBackground,
-              deviceName: deviceName || undefined,
-              landscape: DTR_PDF_OPTIONS.landscape,
-              pageSize: DTR_PDF_OPTIONS.pageSize,
-            },
-            (success, errorType) => {
-              if (!success) reject(new Error(errorType || 'Print failed.'));
-              else resolve();
-            },
-          );
-        }),
+      (wc) => wc.printToPDF(buildDtrPdfOptions(paperSize)),
+      paperSize,
     );
+    tmpPath = path.join(os.tmpdir(), `dtr-print-${Date.now()}.pdf`);
+    fs.writeFileSync(tmpPath, pdfBuffer);
+    await printPdfFile(tmpPath, deviceName);
     return { success: true };
   } catch (err) {
     console.error('Print failed:', err);
     return { success: false, error: err.message };
+  } finally {
+    if (tmpPath) {
+      fs.unlink(tmpPath, () => {});
+    }
   }
 });
 

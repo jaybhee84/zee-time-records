@@ -39,10 +39,16 @@ function getPunchDate(p) {
  * @param {number} year
  * @param {number} month   - 1-12
  * @param {number} noonCutoffHour - default 12 (24h clock)
+ * @param {Object|null} schedule - optional Official Time schedule
+ *   ({ amIn, amOut, pmIn, pmOut, graceMinutes } in 24-hour "HH:MM") used to
+ *   auto-compute undertimeHours/undertimeMinutes per day. Omit (or pass
+ *   null) to leave undertime blank, e.g. for callers like AttendancePage.jsx
+ *   that don't need it.
  * @returns {Array} one row per calendar day of the month:
- *   { day, amArrival, amDeparture, pmArrival, pmDeparture, punchCount }
+ *   { day, amArrival, amDeparture, pmArrival, pmDeparture, punchCount,
+ *     undertimeHours, undertimeMinutes }
  */
-export function buildMonthlyDTR(punches, year, month, noonCutoffHour = 12) {
+export function buildMonthlyDTR(punches, year, month, noonCutoffHour = 12, schedule = null) {
   const daysInMonth = new Date(year, month, 0).getDate();
 
   // group punches by day-of-month
@@ -62,14 +68,26 @@ export function buildMonthlyDTR(punches, year, month, noonCutoffHour = 12) {
     const amGroup = dayPunches.filter((p) => p.datetime.getHours() < noonCutoffHour);
     const pmGroup = dayPunches.filter((p) => p.datetime.getHours() >= noonCutoffHour);
 
-    rows.push({
+    const row = {
       day,
       amArrival: amGroup[0] ? formatTime(amGroup[0].datetime) : '',
       amDeparture: amGroup.length > 1 ? formatTime(amGroup[amGroup.length - 1].datetime) : '',
       pmArrival: pmGroup[0] ? formatTime(pmGroup[0].datetime) : '',
       pmDeparture: pmGroup.length > 1 ? formatTime(pmGroup[pmGroup.length - 1].datetime) : '',
       punchCount: dayPunches.length,
-    });
+      undertimeHours: '',
+      undertimeMinutes: '',
+    };
+
+    if (schedule) {
+      const totalMinutes = computeUndertimeMinutes(row, schedule);
+      if (totalMinutes > 0) {
+        row.undertimeHours = String(Math.floor(totalMinutes / 60));
+        row.undertimeMinutes = String(totalMinutes % 60);
+      }
+    }
+
+    rows.push(row);
   }
 
   return rows;
@@ -81,6 +99,119 @@ function formatTime(date) {
     minute: '2-digit',
     hour12: true,
   });
+}
+
+/**
+ * Parses either a 24-hour "HH:MM" string (how Official Time settings are
+ * stored/saved) or a 12-hour display string like "7:15 AM" / "12 PM" (how
+ * buildMonthlyDTR's own amArrival/amDeparture/pmArrival/pmDeparture fields,
+ * and TimesheetPage's manually-typed values, are formatted) into minutes
+ * since midnight. Returns null if the value is empty or unparseable, so
+ * callers can treat "no punch" / "no schedule set" as "skip this check"
+ * rather than accidentally treating it as midnight.
+ */
+export function timeStrToMinutes(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  if (!s) return null;
+
+  const h24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (h24) {
+    return parseInt(h24[1], 10) * 60 + parseInt(h24[2], 10);
+  }
+
+  const h12 = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (h12) {
+    let h = parseInt(h12[1], 10);
+    const m = h12[2] ? parseInt(h12[2], 10) : 0;
+    const meridiem = h12[3].toUpperCase();
+    if (meridiem === 'AM') {
+      if (h === 12) h = 0;
+    } else if (h !== 12) {
+      h += 12;
+    }
+    return h * 60 + m;
+  }
+
+  return null;
+}
+
+/**
+ * Formats an Official Time schedule ({ amIn, amOut, pmIn, pmOut } in 24-hour
+ * "HH:MM") into the compact display line used on the CS Form 48 header, e.g.
+ * "7:00 AM - 12:00 NN / 1:00 - 4:30 PM".
+ */
+export function formatOfficialHours(schedule) {
+  if (!schedule) return '';
+  const fmt = (mins, isNoonBoundary) => {
+    if (mins == null) return '';
+    let h = Math.floor(mins / 60);
+    const m = mins % 60;
+    const meridiem = h >= 12 ? 'PM' : 'AM';
+    const isNoon = h === 12 && m === 0;
+    h = h % 12;
+    if (h === 0) h = 12;
+    const mStr = String(m).padStart(2, '0');
+    if (isNoonBoundary && isNoon) return `${h}:${mStr} NN`;
+    return `${h}:${mStr} ${meridiem}`;
+  };
+
+  const amIn = timeStrToMinutes(schedule.amIn);
+  const amOut = timeStrToMinutes(schedule.amOut);
+  const pmIn = timeStrToMinutes(schedule.pmIn);
+  const pmOut = timeStrToMinutes(schedule.pmOut);
+
+  const amPart =
+    amIn != null && amOut != null
+      ? `${fmt(amIn)} - ${fmt(amOut, true)}`
+      : '';
+  const pmPart =
+    pmIn != null && pmOut != null
+      ? `${fmt(pmIn, true)} - ${fmt(pmOut)}`
+      : '';
+
+  return [amPart, pmPart].filter(Boolean).join(' / ');
+}
+
+/**
+ * Computes total undertime (in minutes) for one DTR day row against an
+ * Official Time schedule: { amIn, amOut, pmIn, pmOut, graceMinutes } in
+ * 24-hour "HH:MM". Counts late AM arrival, early AM (pre-lunch) departure,
+ * late PM (post-lunch) arrival, and early PM departure — each only past the
+ * configured grace period. A missing punch (employee didn't tap in/out for
+ * that half) is skipped rather than penalized, matching buildMonthlyDTR's
+ * existing "Arrival only" convention for incomplete halves.
+ */
+export function computeUndertimeMinutes(row, schedule) {
+  if (!schedule) return 0;
+  const grace = Number(schedule.graceMinutes) || 0;
+
+  const boundAmIn = timeStrToMinutes(schedule.amIn);
+  const boundAmOut = timeStrToMinutes(schedule.amOut);
+  const boundPmIn = timeStrToMinutes(schedule.pmIn);
+  const boundPmOut = timeStrToMinutes(schedule.pmOut);
+
+  const amArrival = timeStrToMinutes(row.amArrival);
+  const amDeparture = timeStrToMinutes(row.amDeparture);
+  const pmArrival = timeStrToMinutes(row.pmArrival);
+  const pmDeparture = timeStrToMinutes(row.pmDeparture);
+
+  let minutes = 0;
+
+  if (amArrival != null && boundAmIn != null && amArrival > boundAmIn + grace) {
+    minutes += amArrival - boundAmIn;
+  }
+  if (amDeparture != null && boundAmOut != null && amDeparture < boundAmOut - grace) {
+    minutes += boundAmOut - amDeparture;
+  }
+  if (pmArrival != null && boundPmIn != null && pmArrival > boundPmIn + grace) {
+    minutes += pmArrival - boundPmIn;
+  }
+  if (pmDeparture != null && boundPmOut != null && pmDeparture < boundPmOut - grace) {
+    minutes += boundPmOut - pmDeparture;
+  }
+
+  return Math.max(0, Math.round(minutes));
 }
 
 /**

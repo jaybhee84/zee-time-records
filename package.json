@@ -1,17 +1,17 @@
 {
   "name": "zee-time-records-app",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "description": "DTR generator that imports ZKTeco USB flash-disk attendance dumps and produces CSC Form 48 style Daily Time Records.",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "vite build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
+    "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
     "lucide-react": "^0.400.0",
-    "mdb-reader": "^3.2.0",
+    "pdf-to-printer": "^5.8.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sql.js": "^1.14.1"
@@ -19,7 +19,6 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^8.2.2",
-    "cross-env": "^7.0.3",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "vite": "^5.4.0",
@@ -27,24 +26,17 @@
   },
   "build": {
     "appId": "com.jaybhee.zkteco-dtr",
-    "productName": "Zee Time Records App",
+    "productName": "DepEd DTR Generator",
     "files": [
       "dist/**/*",
-      "electron/**/*",
-      "src/assets/**/*"
+      "electron/**/*"
     ],
     "asarUnpack": [
-      "**/node_modules/sql.js/dist/*.wasm"
+      "**/node_modules/better-sqlite3/**/*",
+      "**/node_modules/pdf-to-printer/**/*"
     ],
     "directories": {
       "output": "release"
-    },
-    "win": {
-      "icon": "src/assets/ZeeTimeRecords.ico",
-      "target": ["nsis", "portable"]
-    },
-    "linux": {
-      "icon": "src/assets/ZeeTimeRecords_icon.png"
     }
   }
 }

@@ -1,11 +1,81 @@
-/* CS Form 48 Styles */
-.cs48-card {
-    width: 330px;
+/* ============================================================
+   CS FORM 48 PRINT & PDF STYLESHEET
+   ============================================================ */
+:root {
+    /* ----------------------------------------------------
+       1. TABLE COLUMN WIDTH ADJUSTMENTS
+       ---------------------------------------------------- */
+    --col-day: 16%;
+    --col-am-arrival: 16%;
+    --col-am-departure: 17%;
+    --col-pm-arrival: 16%;
+    --col-pm-departure: 15%;
+    --col-hour: 11%;
+    --col-minutes: 13%;
+
+    /* ----------------------------------------------------
+       2. ROW HEIGHT CONTROLS
+       ---------------------------------------------------- */
+    --main-header-height: 29px;
+    /* Height of top table header */
+    --data-row-height: 6px;
+    /* Height of time log rows (1-31) */
+
+    /* ----------------------------------------------------
+       3. GLOBAL FONT FAMILY & SIZE CONTROLS
+       ---------------------------------------------------- */
+    --dtr-font-family: Arial, 'Segoe UI', Calibri, sans-serif;
+    --title-size: 14px;
+    /* "DAILY TIME RECORD" Header */
+    --name-size: 11px;
+    /* Employee Name */
+    --form-num-size: 12px;
+    /* Civil Service Form No. 48 text */
+    --table-font-size: 12px;
+    /* Default table font size */
+}
+
+/* Printable Page Margins Reset */
+@page {
+    margin: 0 !important;
+    size: auto;
+}
+
+@media print {
+    @page {
+        margin: 0 !important;
+        size: auto;
+    }
+
+    html,
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    .cs48-employee-block {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
     background: #ffffff;
-    border: 1px solid #000;
-    padding: 10px 12px;
-    font-family: "Times New Roman", Times, serif;
-    font-size: 11px;
+}
+
+/* CS Form 48 Base Card Styles */
+.cs48-card {
+    width: 100%;
+    background: #ffffff;
+    padding: 4px 6px;
+    font-family: var(--dtr-font-family);
+    font-size: 13px;
     color: #000;
     box-sizing: border-box;
 }
@@ -13,91 +83,238 @@
 .cs48-header-top {
     display: flex;
     justify-content: space-between;
-    font-size: 9px;
-    font-weight: bold;
+    align-items: flex-start;
+    margin-bottom: 14px;
 }
 
+/* ----------------------------------------------------
+   4. FORM NUMBER & HEADER COPIES FONT STYLES
+   ---------------------------------------------------- */
+.cs48-form-num {
+    font-size: var(--form-num-size);
+    font-weight: normal;
+    font-family: 'Times New Roman', Times, serif;
+}
+
+.cs48-copy-tag {
+    font-size: 11px;
+    font-weight: bold;
+    font-family: 'Times New Roman', Times, serif;
+}
+
+/* ----------------------------------------------------
+   5. "DAILY TIME RECORD" MAIN TITLE FONT STYLES
+   ---------------------------------------------------- */
 .cs48-title {
     text-align: center;
-    font-size: 14px;
+    font-size: var(--title-size);
     font-weight: bold;
-    margin: 6px 0 10px 0;
+    margin: 0 0 8px 0;
     letter-spacing: 0.5px;
+    font-family: 'Times New Roman', Times, serif;
 }
 
+/* ----------------------------------------------------
+   6. EMPLOYEE NAME FONT STYLES
+   ---------------------------------------------------- */
 .cs48-emp-name {
     text-align: center;
     font-weight: bold;
-    font-size: 12px;
+    font-size: var(--name-size);
+    font-family: var(--dtr-font-family);
     border-bottom: 1px solid #000;
     padding-bottom: 2px;
-    margin-bottom: 6px;
+    margin-top: 8px;
+    margin-bottom: 8px;
     text-transform: uppercase;
+}
+
+.cs48-month {
+    font-size: 12px;
+    font-family: 'Times New Roman', Times, serif;
+    text-align: center;
+    margin-bottom: 6px;
 }
 
 .cs48-month-row {
     display: flex;
+    align-items: baseline;
     gap: 8px;
-    font-size: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 24px;
     margin-bottom: 6px;
+}
+
+.cs48-month-row>span:first-child {
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .cs48-month-val {
     border-bottom: 1px solid #000;
     flex: 1;
     text-align: center;
-    font-weight: bold;
+    font-weight: normal;
+    font-size: 14px;
+    font-family: var(--dtr-font-family);
+}
+
+.cs48-regular-label {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 12px;
+    margin-left: 12px;
+}
+
+.cs48-regular-box {
+    flex: 0 0 70px;
+    margin-left: 0;
 }
 
 .cs48-meta-table {
     display: flex;
     justify-content: space-between;
-    border: 1px solid #000;
-    padding: 4px;
-    font-size: 9px;
+    align-items: stretch;
+    padding: 2px 0;
+    font-size: 12px;
+    font-weight: bold;
     margin-bottom: 6px;
+}
+
+.cs48-meta-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cs48-meta-arrival-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-left: 14px;
+}
+
+.cs48-meta-right {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 4px;
+    font-size: 11px;
 }
 
 .cs48-meta-line {
     display: flex;
-    justify-content: space-between;
+    align-items: baseline;
+    justify-content: flex-end;
     gap: 12px;
 }
 
 .cs48-box {
     border-bottom: 1px solid #000;
-    min-width: 35px;
-    text-align: right;
-    font-weight: bold;
+    min-width: 48px;
+    text-align: center;
+    font-weight: normal;
+    margin-left: auto;
 }
 
+/* ---------- Table Styles ---------- */
 .cs48-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 9px;
+    table-layout: fixed;
+    font-size: 11px;
 }
 
+/* Base Cells */
 .cs48-table th,
 .cs48-table td {
     border: 1px solid #000;
     padding: 1px 2px;
-    height: 14px;
-}
-
-.cs48-table th {
-    text-align: center;
-    font-weight: bold;
-}
-
-.cs48-table td.center {
+    font-family: var(--dtr-font-family);
+    font-size: var(--table-font-size);
     text-align: center;
 }
 
+/* ----------------------------------------------------
+   7. MAIN TABLE HEADER (Top Row)
+   ---------------------------------------------------- */
+.cs48-table thead tr:first-child th {
+    height: var(--main-header-height);
+    font-size: 13px;
+    font-weight: normal;
+    font-family: var(--dtr-font-family);
+    vertical-align: middle;
+}
+
+/* ----------------------------------------------------
+   8. TABLE SUBHEADERS (Second Row)
+   ---------------------------------------------------- */
+.cs48-table thead tr:nth-child(2) th {
+    height: var(--data-row-height);
+    font-size: 12px;
+    font-weight: normal;
+    font-family: var(--dtr-font-family);
+    vertical-align: middle;
+}
+
+/* ----------------------------------------------------
+   9. TIME LOGS / DAILY DATA ROWS (Dates 1 to 31)
+   ---------------------------------------------------- */
+.cs48-table tbody td {
+    height: 6px;
+    font-family: var(--dtr-font-family);
+    font-size: var(--table-font-size);
+    font-weight: normal;
+    vertical-align: middle;
+    text-align: left;
+    white-space: nowrap;
+    padding-left: 4px;
+}
+
+/* Targets ONLY the 1st Column (Date numbers 1-31) */
+.cs48-table tbody td:first-child {
+    text-align: center;
+    padding-left: 0;
+}
+
+/* Column Width Link Classes */
+.cs48-table col.col-day {
+    width: var(--col-day);
+}
+
+.cs48-table col.col-am-arrival {
+    width: var(--col-am-arrival);
+}
+
+.cs48-table col.col-am-departure {
+    width: var(--col-am-departure);
+}
+
+.cs48-table col.col-pm-arrival {
+    width: var(--col-pm-arrival);
+}
+
+.cs48-table col.col-pm-departure {
+    width: var(--col-pm-departure);
+}
+
+.cs48-table col.col-hour {
+    width: var(--col-hour);
+}
+
+.cs48-table col.col-minutes {
+    width: var(--col-minutes);
+}
+
+/* Footer & Certificate Styles */
 .cs48-cert-text {
-    font-size: 8px;
-    text-align: justify;
-    margin: 6px 0 18px 0;
-    line-height: 1.1;
+    font-size: 10.5px;
+    font-weight: bold;
+    text-align: center;
+    width: 88%;
+    margin: 6px auto 12px auto;
+    line-height: 1.25;
 }
 
 .cs48-sig-line {
@@ -108,41 +325,58 @@
 
 .cs48-sig-label {
     text-align: center;
-    font-size: 9px;
+    font-size: 11px;
+    font-weight: bold;
     margin-top: 2px;
 }
 
-.cs48-divider {
+.cs48-verified-text {
     text-align: center;
-    font-size: 8px;
-    margin: 10px 0;
+    font-size: 11px;
     font-weight: bold;
+    margin-bottom: 6px;
 }
 
-/* Side-by-Side Double View Layout — used only when CSForm48View is
-   rendered with isPrintMode=true (the hidden print window; see
-   PrintRenderWindow.jsx). The .cs48-card width override below is scoped
-   via this descendant selector rather than needing !important + a
-   body-level mode class: two-class specificity naturally wins over the
-   single-class .cs48-card { width: 330px } rule used for the on-screen
-   single-card preview, with no toggling required. */
+/* EQUAL LINES FIX FOR BOTH CLASSES (SCREEN & PRINT) */
+.cs48-double-rule,
+.cs48-equal-line {
+    border-top: none !important;
+    text-align: center !important;
+    font-family: 'Times New Roman', Times, serif !important;
+    font-size: 11px !important;
+    font-weight: bold !important;
+    letter-spacing: -1px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    margin: 6px 0 3px 0 !important;
+}
+
+/* Generates equal signs automatically if the tag is empty */
+.cs48-double-rule:empty::before {
+    content: "=========================================================================";
+}
+
+/* Side-by-Side View Layout */
 .cs48-double-page {
     display: flex;
     flex-direction: row;
     justify-content: space-between;
+    align-items: stretch;
     width: 100%;
+    gap: 4px;
+    background: #ffffff;
 }
 
 .cs48-double-page .cs48-card {
-    width: 48%;
+    width: calc(50% - 4px);
+    max-width: none;
     box-sizing: border-box;
 }
 
-/* Separates each employee's block onto its own printed page. Always
-   active — no longer conditional on @media print or a body class, since
-   the hidden print window's only content IS this print output. */
 .cs48-employee-block {
     page-break-after: always;
     break-after: page;
-    padding: 8mm 4mm;
+    padding: 8px 10px;
+    width: 100%;
+    box-sizing: border-box;
 }

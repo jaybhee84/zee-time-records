@@ -9,37 +9,60 @@ import {
 } from "lucide-react";
 import EmployeeFormModal from "./EmployeeFormModal.jsx";
 
+// Mirrors the classification used in TimesheetPage.jsx, so an employee's
+// Teaching / Non-Teaching group is always derived consistently from their
+// Sub-Group rather than relying on a `group` field that isn't reliably
+// populated on every employee record.
+const TEACHING_SUBGROUPS = [
+  "Kinder",
+  "Grade 1",
+  "Grade 2",
+  "Grade 3",
+  "Grade 4",
+  "Grade 5",
+  "Grade 6",
+  "SNED",
+  "Departmental",
+  "Subject Teacher",
+  "Alive",
+  "Substitute Teacher",
+];
+
+const isTeachingSubgroup = (subGroup = "") => {
+  const normalized = subGroup.trim().toLowerCase();
+  return (
+    TEACHING_SUBGROUPS.some((sg) => sg.toLowerCase() === normalized) ||
+    normalized === "sped" ||
+    normalized.startsWith("subject teacher") ||
+    normalized.startsWith("substitute teacher")
+  );
+};
+
+const resolveGroup = (e) => {
+  if (e.group === "Teaching" || e.group === "Non-Teaching") return e.group;
+  return isTeachingSubgroup(e.subGroup) ? "Teaching" : "Non-Teaching";
+};
+
 export default function EmployeesPage({ employees, setEmployees }) {
   const [search, setSearch] = useState("");
-  const [selectedSubGroup, setSelectedSubGroup] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
   const [modalState, setModalState] = useState(null);
-  const [confirmRemoveTarget, setConfirmRemoveTarget] = useState(null);
 
-  // Extract unique sub-groups from current employees
-  const subGroupOptions = useMemo(() => {
-    const uniqueGroups = new Set(
-      employees.map((e) => e.subGroup).filter(Boolean),
-    );
-    return Array.from(uniqueGroups).sort();
-  }, [employees]);
-
-  // Combined filter for search and selected sub-group
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
 
     return employees.filter((e) => {
-      const matchesSearch =
-        !q ||
+      if (groupFilter !== "all" && resolveGroup(e) !== groupFilter)
+        return false;
+
+      if (!q) return true;
+      return (
         e.familyName?.toLowerCase().includes(q) ||
         e.firstName?.toLowerCase().includes(q) ||
-        e.registryNumber?.toLowerCase().includes(q);
-
-      const matchesSubGroup =
-        !selectedSubGroup || e.subGroup === selectedSubGroup;
-
-      return matchesSearch && matchesSubGroup;
+        e.registryNumber?.toLowerCase().includes(q)
+      );
     });
-  }, [employees, search, selectedSubGroup]);
+  }, [employees, search, groupFilter]);
 
   const registryNumbers = employees.map((e) => e.registryNumber);
 
@@ -55,22 +78,11 @@ export default function EmployeesPage({ employees, setEmployees }) {
     setModalState(null);
   };
 
-  const handleRemove = (employee) => {
-    setConfirmRemoveTarget(employee);
-  };
-
-  const handleCancelRemove = () => {
-    setConfirmRemoveTarget(null);
-  };
-
-  const handleConfirmRemove = () => {
-    if (!confirmRemoveTarget) return;
+  const handleRemove = (registryNumber) => {
+    if (!confirm("Remove this employee?")) return;
     setEmployees((prev) =>
-      prev.filter(
-        (e) => e.registryNumber !== confirmRemoveTarget.registryNumber,
-      ),
+      prev.filter((e) => e.registryNumber !== registryNumber),
     );
-    setConfirmRemoveTarget(null);
   };
 
   return (
@@ -78,27 +90,15 @@ export default function EmployeesPage({ employees, setEmployees }) {
       <div className="page-header">
         <h2>Employees</h2>
         <div className="page-header-actions">
-          {/* Sub-Group Dropdown Filter */}
           <select
-            value={selectedSubGroup}
-            onChange={(e) => setSelectedSubGroup(e.target.value)}
-            className="subgroup-select"
-            style={{
-              padding: "0.4rem 0.6rem",
-              borderRadius: "6px",
-              border: "1px solid #ccc",
-              fontSize: "14px",
-              cursor: "pointer",
-            }}
+            className="group-filter-select"
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
           >
-            <option value="">All</option>
-            {subGroupOptions.map((sg) => (
-              <option key={sg} value={sg}>
-                {sg}
-              </option>
-            ))}
+            <option value="all">All Groups</option>
+            <option value="Teaching">Teaching</option>
+            <option value="Non-Teaching">Non-Teaching</option>
           </select>
-
           <div className="search-box">
             <Search size={16} />
             <input
@@ -118,13 +118,12 @@ export default function EmployeesPage({ employees, setEmployees }) {
           <p className="hint">
             {employees.length === 0
               ? 'No employees yet — click "Add Employee" to get started.'
-              : "No employees match that search or sub-group filter."}
+              : "No employees match that search."}
           </p>
         ) : (
           <table className="employee-table">
             <thead>
               <tr style={{ verticalAlign: "middle" }}>
-                <th style={{ textAlign: "center", width: "50px" }}>#</th>
                 <th style={{ textAlign: "center" }}>Registry No.</th>
                 <th style={{ textAlign: "left" }}>Name</th>
                 <th style={{ textAlign: "center" }}>Group</th>
@@ -138,22 +137,11 @@ export default function EmployeesPage({ employees, setEmployees }) {
               {filtered
                 .slice()
                 .sort((a, b) => a.familyName.localeCompare(b.familyName))
-                .map((e, index) => (
+                .map((e) => (
                   <tr
                     key={e.registryNumber}
                     style={{ verticalAlign: "middle" }}
                   >
-                    {/* Index / Row Number */}
-                    <td
-                      style={{
-                        textAlign: "center",
-                        fontWeight: "600",
-                        color: "#6b7280",
-                      }}
-                    >
-                      {index + 1}
-                    </td>
-
                     {/* Registry No. (Centered) */}
                     <td style={{ textAlign: "center" }}>{e.registryNumber}</td>
 
@@ -166,11 +154,9 @@ export default function EmployeesPage({ employees, setEmployees }) {
                     {/* Group (Centered) */}
                     <td style={{ textAlign: "center" }}>
                       <span
-                        className={`badge badge-${
-                          e.group === "Teaching" ? "teaching" : "nonteaching"
-                        }`}
+                        className={`badge badge-${resolveGroup(e) === "Teaching" ? "teaching" : "nonteaching"}`}
                       >
-                        {e.group}
+                        {resolveGroup(e)}
                       </span>
                     </td>
 
@@ -217,7 +203,7 @@ export default function EmployeesPage({ employees, setEmployees }) {
                       </button>
                       <button
                         className="icon-btn danger"
-                        onClick={() => handleRemove(e)}
+                        onClick={() => handleRemove(e.registryNumber)}
                         title="Remove"
                       >
                         <Trash2 size={15} />
@@ -237,49 +223,6 @@ export default function EmployeesPage({ employees, setEmployees }) {
           onSave={handleSave}
           onClose={() => setModalState(null)}
         />
-      )}
-
-      {confirmRemoveTarget && (
-        <div className="modal-backdrop">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>
-                <Trash2 size={18} /> Remove Employee
-              </h3>
-              <button className="icon-btn" onClick={handleCancelRemove}>
-                <XCircle size={18} />
-              </button>
-            </div>
-
-            <div className="employee-form">
-              <p>
-                Remove{" "}
-                <strong>
-                  {confirmRemoveTarget.familyName},{" "}
-                  {confirmRemoveTarget.firstName}
-                </strong>{" "}
-                ({confirmRemoveTarget.registryNumber}) from the roster?
-              </p>
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={handleCancelRemove}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={handleConfirmRemove}
-                >
-                  Remove Employee
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

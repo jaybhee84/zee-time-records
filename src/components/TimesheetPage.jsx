@@ -201,6 +201,10 @@ export default function TimesheetPage({ onClose }) {
   // Track manually unlocked Weekend Days (Sat/Sun)
   const [unlockedDays, setUnlockedDays] = useState({});
 
+  // Official Time schedules (teaching / non-teaching), used to auto-compute
+  // undertime for the selected employee's DTR grid below.
+  const [officialTime, setOfficialTime] = useState({});
+
   // Save status banner (replaces native alert(), which desyncs Electron
   // renderer focus and can leave other inputs/modals unclickable until
   // the user clicks away and back in)
@@ -287,6 +291,13 @@ export default function TimesheetPage({ onClose }) {
         .loadEmployees()
         .then((data) => setEmployees(data || []))
         .catch((err) => console.error("Failed to load local employees:", err));
+
+      window.dtrApi
+        .getOfficialTime()
+        .then((data) => setOfficialTime(data || {}))
+        .catch((err) =>
+          console.error("Failed to load Official Time settings:", err),
+        );
     }
   }, []);
 
@@ -382,10 +393,24 @@ export default function TimesheetPage({ onClose }) {
       }`.trim()
     : null;
 
+  const selectedSchedule = useMemo(() => {
+    if (!selectedEmployee) return null;
+    const sg = selectedEmployee.subGroup || "";
+    if (isTeachingSubgroup(sg)) return officialTime.teaching || null;
+    if (isNonTeachingSubgroup(sg)) return officialTime.nonTeaching || null;
+    return null;
+  }, [selectedEmployee, officialTime]);
+
   const baseRows = useMemo(() => {
     if (!devPin) return [];
-    return buildMonthlyDTR(byPin[normalizePin(devPin)] || [], year, month);
-  }, [devPin, byPin, year, month]);
+    return buildMonthlyDTR(
+      byPin[normalizePin(devPin)] || [],
+      year,
+      month,
+      12,
+      selectedSchedule,
+    );
+  }, [devPin, byPin, year, month, selectedSchedule]);
 
   const daysInMonth = useMemo(
     () => new Date(year, month, 0).getDate(),

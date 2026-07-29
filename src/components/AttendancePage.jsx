@@ -382,7 +382,7 @@ export default function AttendancePage({
           <select
             value={selectedDrive}
             onChange={(e) => setSelectedDrive(e.target.value)}
-            style={{ flex: 1, padding: "8px" }}
+            style={{ width: "320px", maxWidth: "100%", padding: "8px" }}
           >
             {drives.length === 0 && (
               <option value="">No USB drive detected</option>
