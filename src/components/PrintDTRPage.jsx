@@ -14,6 +14,7 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  FileX,
 } from "lucide-react";
 import {
   groupByPin,
@@ -95,6 +96,9 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
   // with Prev/Next arrows rather than stacking every matching employee's
   // full CS Form 48 card in one long scrolling page.
   const [previewIndex, setPreviewIndex] = useState(0);
+
+  // Blank DTR toggle — when on, all rows are printed empty (no log data)
+  const [blankDtr, setBlankDtr] = useState(false);
 
   // Printer selection state
   const [printers, setPrinters] = useState([]);
@@ -263,8 +267,9 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
         ? `${emp.middleInitial.toUpperCase()}.`
         : "";
       const employeeName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
+      // When blankDtr is on, pass an empty punch list so every row is blank
       const rows = buildMonthlyDTR(
-        byPin[normalizePin(devPin)] || [],
+        blankDtr ? [] : byPin[normalizePin(devPin)] || [],
         year,
         month,
       );
@@ -810,6 +815,75 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
           align-items: center;
           gap: 12px;
         }
+
+        /* ---------- Blank DTR Toggle ---------- */
+        .blank-dtr-toggle {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          height: 40px;
+          padding: 0 12px;
+          background: #f8fafc;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-size: 0.85rem;
+          font-weight: 600;
+          color: #475569;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .blank-dtr-toggle:hover {
+          background: #f1f5f9;
+          border-color: #94a3b8;
+        }
+
+        .blank-dtr-toggle--on {
+          background: #fff7ed;
+          border-color: #fb923c;
+          color: #c2410c;
+        }
+
+        .blank-dtr-toggle--on:hover {
+          background: #ffedd5;
+        }
+
+        .blank-dtr-toggle__track {
+          width: 32px;
+          height: 18px;
+          background: #cbd5e1;
+          border-radius: 999px;
+          position: relative;
+          transition: background 0.2s ease;
+          flex-shrink: 0;
+        }
+
+        .blank-dtr-toggle--on .blank-dtr-toggle__track {
+          background: #f97316;
+        }
+
+        .blank-dtr-toggle__thumb {
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: #ffffff;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          transition: transform 0.2s ease;
+        }
+
+        .blank-dtr-toggle--on .blank-dtr-toggle__thumb {
+          transform: translateX(14px);
+        }
+
+        .blank-dtr-toggle__label {
+          flex: 1;
+          text-align: left;
+        }
       `}</style>
 
       {/* Controls Section */}
@@ -961,6 +1035,30 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                 onChange={(e) => setYear(Number(e.target.value))}
               />
             </div>
+
+            {/* Blank DTR Toggle */}
+            <div className="form-group" style={{ justifyContent: "flex-end" }}>
+              <label className="form-label">
+                <FileX size={14} /> Print Mode
+              </label>
+              <button
+                type="button"
+                onClick={() => setBlankDtr((v) => !v)}
+                className={`blank-dtr-toggle${blankDtr ? " blank-dtr-toggle--on" : ""}`}
+                title={
+                  blankDtr
+                    ? "Blank DTR mode is ON — no time logs will be printed"
+                    : "Click to print blank DTR forms with no time logs"
+                }
+              >
+                <span className="blank-dtr-toggle__track">
+                  <span className="blank-dtr-toggle__thumb" />
+                </span>
+                <span className="blank-dtr-toggle__label">
+                  {blankDtr ? "Blank DTR" : "With Logs"}
+                </span>
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -1001,7 +1099,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
             const empName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
 
             const rows = buildMonthlyDTR(
-              byPin[normalizePin(devPin)] || [],
+              blankDtr ? [] : byPin[normalizePin(devPin)] || [],
               year,
               month,
             );
