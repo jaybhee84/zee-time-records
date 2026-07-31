@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest]
 
     steps:
       - name: Checkout Repository
@@ -48,7 +48,5 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.exe
-            dist/*.dmg
-            dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
