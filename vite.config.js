@@ -11,5 +11,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      external: [
+        'mdb-reader', // Native Node module — must stay in Electron main process only
+      ],
+    },
   },
 });
