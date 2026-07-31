@@ -1,0 +1,80 @@
+:root {
+    /* Change this value to custom size both logos at once */
+    --sidebar-logo-size: 150px;
+}
+
+/* Sidebar Footer Container */
+.sidebar .sidebar-footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+    padding-top: 16px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 12px !important;
+    margin-top: auto !important;
+    width: 100% !important;
+}
+
+/* Logos Section at top of footer */
+.sidebar .sidebar-logos {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 14px !important;
+    width: 100% !important;
+}
+
+/* Scalable Logo Image Styles */
+.sidebar .sidebar-logo {
+    width: var(--sidebar-logo-size) !important;
+    height: var(--sidebar-logo-size) !important;
+    min-width: var(--sidebar-logo-size) !important;
+    min-height: var(--sidebar-logo-size) !important;
+    max-width: var(--sidebar-logo-size) !important;
+    max-height: var(--sidebar-logo-size) !important;
+    object-fit: contain !important;
+    display: block !important;
+    margin: 0 auto !important;
+    border: none !important;
+    background: transparent !important;
+    will-change: transform, filter;
+}
+
+/* User Display Label directly above Log Out */
+.sidebar .sidebar-user {
+    font-size: 13.5px !important;
+    color: #9fb0d1 !important;
+    font-weight: 500 !important;
+    width: 100% !important;
+    text-align: left !important;
+    padding: 0 4px !important;
+}
+
+.sidebar .sidebar-logout {
+    width: 100% !important;
+}
+
+/* Continuous Glow & Pulse Animation */
+@keyframes sidebarGlowPulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+    }
+
+    50% {
+        transform: scale(1.08);
+        filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.85)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+    }
+}
+
+.sidebar .logo-pulse {
+    animation: sidebarGlowPulse 2.5s ease-in-out infinite !important;
+}
+
+.sidebar .logo-pulse-delayed {
+    animation: sidebarGlowPulse 2.5s ease-in-out infinite !important;
+    animation-delay: 1.25s !important;
+}

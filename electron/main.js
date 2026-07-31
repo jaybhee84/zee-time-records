@@ -275,7 +275,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     // Add this line pointing to your icon file in src/assets
-    icon: path.join(__dirname, '../src/assets/icon.ico'),
+    icon: path.join(__dirname, '../src/assets/ZeeTimeRecords.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
