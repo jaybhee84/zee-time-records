@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from "react";
 import logoSrc from "../assets/ZeeTimeRecords_Logo.png";
+import bg1 from "../assets/bg1.jpg";
+import bg2 from "../assets/bg2.png";
+import bg3 from "../assets/bg3.jpg";
+import bg4 from "../assets/bg4.jpg";
 
-// You can swap these Unsplash URLs with your own local image imports!
-const BG_IMAGES = [
-  "https://images.unsplash.com/photo-1577896851231-70ef18881754?q=80&w=1200&auto=format&fit=crop", // Classroom / Teacher
-  "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?q=80&w=1200&auto=format&fit=crop", // Meeting / School Admin
-  "https://images.unsplash.com/photo-1580582932707-520aed937b7b?q=80&w=1200&auto=format&fit=crop", // Office / Administrative
-  "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1200&auto=format&fit=crop", // Educators / Collaboration
-];
+const BG_IMAGES = [bg1, bg2, bg3, bg4];
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -525,7 +523,7 @@ export default function Login({ onLoginSuccess }) {
         <div className="zt-form-panel">
           {BG_IMAGES.map((url, i) => (
             <div
-              key={url}
+              key={i}
               className={`zt-bg-slide ${i === bgIndex ? "active" : ""}`}
               style={{ backgroundImage: `url(${url})` }}
             />
