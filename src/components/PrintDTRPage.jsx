@@ -138,7 +138,24 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
     return list;
   }, [employees]);
 
-  const byPin = useMemo(() => groupByPin(punches), [punches]);
+  // Always fetch punches fresh from SQLite for the selected month so that
+  // edits saved in TimesheetPage are immediately reflected here without
+  // requiring a full app reload. The `punches` prop is the initial load
+  // from the parent; `localPunches` overrides it once the fetch resolves.
+  const [localPunches, setLocalPunches] = useState(null);
+
+  useEffect(() => {
+    setLocalPunches(null); // clear stale data while loading
+    window.dtrApi
+      ?.getPunches?.({ year, month })
+      .then((fresh) => setLocalPunches(Array.isArray(fresh) ? fresh : []))
+      .catch(() => setLocalPunches([]));
+  }, [year, month]);
+
+  const byPin = useMemo(
+    () => groupByPin(localPunches ?? punches),
+    [localPunches, punches],
+  );
 
   // Always release the previous blob URL when it changes or the component
   // unmounts, to avoid leaking memory across repeated previews.

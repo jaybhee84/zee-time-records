@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS Form 48 - Daily Time Record</title>
+    <style>
+        /* ============================================================
+           CS FORM 48 PRINT & PDF STYLESHEET
+           ============================================================ */
+        :root {
+            /* ----------------------------------------------------
+               1. TABLE COLUMN WIDTH ADJUSTMENTS
+               ---------------------------------------------------- */
+            --col-day: 14%;
+            --col-am-arrival: 17%;
+            --col-am-departure: 17%;
+            --col-pm-arrival: 17%;
+            --col-pm-departure: 17%;
+            --col-hour: 9%;
+            --col-minutes: 9%;
+
+            /* ----------------------------------------------------
+               2. ROW HEIGHT CONTROLS
+               ---------------------------------------------------- */
+            --main-header-height: 29px;
+            --data-row-height: 14px;
+
+            /* ----------------------------------------------------
+               3. GLOBAL FONT FAMILY & SIZE CONTROLS
+               ---------------------------------------------------- */
+            --dtr-font-family: Arial, 'Segoe UI', Calibri, sans-serif;
+            --title-size: 14px;
+            --name-size: 11px;
+            --form-num-size: 12px;
+            --table-font-size: 11px;
+        }
+
+        /* Printable Page Margins Reset */
+        @page {
+            margin: 0 !important;
+            size: auto;
+        }
+
+        @media print {
+            @page {
+                margin: 0 !important;
+                size: auto;
+            }
+
+            html,
+            body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            .cs48-employee-block {
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+        }
+
+        /* CS Form 48 Base Card Styles */
+        .cs48-card {
+            width: 100%;
+            max-width: 420px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 12px 16px;
+            font-family: var(--dtr-font-family);
+            font-size: 13px;
+            color: #000;
+            box-sizing: border-box;
+        }
+
+        .cs48-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 4px;
+        }
+
+        /* ----------------------------------------------------
+           4. FORM NUMBER & HEADER COPIES FONT STYLES
+           ---------------------------------------------------- */
+        .cs48-form-num {
+            font-size: var(--form-num-size);
+            font-weight: normal;
+            font-style: italic;
+            font-family: 'Times New Roman', Times, serif;
+        }
+
+        .cs48-copy-tag {
+            font-size: 11px;
+            font-weight: bold;
+            font-family: 'Times New Roman', Times, serif;
+        }
+
+        /* ----------------------------------------------------
+           5. "DAILY TIME RECORD" MAIN TITLE FONT STYLES
+           ---------------------------------------------------- */
+        .cs48-title {
+            text-align: center;
+            font-size: var(--title-size);
+            font-weight: bold;
+            margin: 0 0 6px 0;
+            letter-spacing: 0.5px;
+            font-family: 'Times New Roman', Times, serif;
+        }
+
+        /* ----------------------------------------------------
+           6. EMPLOYEE NAME & MONTH HEADER STYLES
+           ---------------------------------------------------- */
+        .cs48-emp-name {
+            text-align: center;
+            font-weight: bold;
+            font-size: var(--name-size);
+            font-family: var(--dtr-font-family);
+            border-bottom: 1.75px solid #000;
+            padding-bottom: 2px;
+            margin-top: 4px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .cs48-month-row {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-top: 6px;
+            margin-bottom: 6px;
+        }
+
+        .cs48-month-row>span:first-child {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        .cs48-month-val {
+            border-bottom: 1.75px solid #000;
+            flex: 1;
+            text-align: center;
+            font-weight: normal;
+            font-size: 12px;
+            font-family: var(--dtr-font-family);
+        }
+
+        .cs48-regular-label {
+            flex-shrink: 0;
+            white-space: nowrap;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+
+        .cs48-regular-box {
+            border-bottom: 1.75px solid #000;
+            width: 60px;
+            text-align: center;
+        }
+
+        .cs48-meta-table {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 2px 0;
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        .cs48-meta-left {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .cs48-meta-right {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 4px;
+        }
+
+        .cs48-meta-line {
+            display: flex;
+            align-items: baseline;
+            justify-content: flex-end;
+            gap: 6px;
+        }
+
+        .cs48-box {
+            border-bottom: 1.75px solid #000;
+            min-width: 48px;
+            text-align: center;
+            font-weight: normal;
+        }
+
+        /* ----------------------------------------------------
+           TABLE STYLES (OUTER FRAME & INNER GRID)
+           ---------------------------------------------------- */
+        .cs48-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 11px;
+            border: 1.75px solid #000;
+        }
+
+        .cs48-table th,
+        .cs48-table td {
+            border: 1.75px solid #000;
+            padding: 1px 2px;
+            font-family: var(--dtr-font-family);
+            font-size: var(--table-font-size);
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        /* ----------------------------------------------------
+           7. MAIN TABLE HEADER (Top Row)
+           ---------------------------------------------------- */
+        .cs48-table thead tr:first-child th {
+            height: var(--main-header-height);
+            font-size: 12px;
+            font-weight: bold;
+            font-family: var(--dtr-font-family);
+            vertical-align: middle;
+        }
+
+        /* ----------------------------------------------------
+           8. TABLE SUBHEADERS (Second Row)
+           ---------------------------------------------------- */
+        .cs48-table thead tr:nth-child(2) th {
+            height: 19px;
+            font-size: 10.5px;
+            font-weight: normal;
+            font-family: var(--dtr-font-family);
+            vertical-align: middle;
+        }
+
+        /* ----------------------------------------------------
+           9. TIME LOGS / DAILY DATA ROWS
+           ---------------------------------------------------- */
+        .cs48-table tbody td {
+            height: var(--data-row-height);
+            font-family: var(--dtr-font-family);
+            font-size: var(--table-font-size);
+            font-weight: normal;
+            vertical-align: middle;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .cs48-table tbody td:first-child {
+            text-align: center;
+            font-weight: bold;
+        }
+
+        /* Column 5 - PM Departure Right Alignment */
+        .cs48-table tbody tr:nth-child(-n+31) td:nth-child(5) {
+            text-align: right;
+            padding-right: 4px;
+        }
+
+        .cs48-table tbody tr:nth-child(-n+31) {
+            height: var(--data-row-height);
+        }
+
+        .cs48-table tbody tr:nth-child(-n+31) td {
+            padding: 1px 2px;
+            font-size: var(--table-font-size);
+        }
+
+        /* Column Width Link Classes */
+        .cs48-table col.col-day {
+            width: var(--col-day);
+        }
+
+        .cs48-table col.col-am-arrival {
+            width: var(--col-am-arrival);
+        }
+
+        .cs48-table col.col-am-departure {
+            width: var(--col-am-departure);
+        }
+
+        .cs48-table col.col-pm-arrival {
+            width: var(--col-pm-arrival);
+        }
+
+        .cs48-table col.col-pm-departure {
+            width: var(--col-pm-departure);
+        }
+
+        .cs48-table col.col-hour {
+            width: var(--col-hour);
+        }
+
+        .cs48-table col.col-minutes {
+            width: var(--col-minutes);
+        }
+
+        /* ----------------------------------------------------
+           FOOTER & SIGNATURE LINES (Bottom Section)
+           ---------------------------------------------------- */
+        .cs48-cert-text {
+            font-size: 10px;
+            font-weight: normal;
+            text-align: justify;
+            text-justify: inter-word;
+            width: 100%;
+            margin: 8px auto 24px auto;
+            line-height: 1.25;
+            font-family: 'Times New Roman', Times, serif;
+        }
+
+        .cs48-sig-line {
+            border-bottom: 1.75px solid #000;
+            width: 85%;
+            margin: 0 auto;
+        }
+
+        .cs48-sig-label {
+            text-align: center;
+            font-size: 10.5px;
+            font-weight: normal;
+            margin-top: 2px;
+            font-family: 'Times New Roman', Times, serif;
+        }
+
+        /* ----------------------------------------------------
+           UNBROKEN TEXT EQUAL SIGNS & VERIFIED TEXT
+           ---------------------------------------------------- */
+        .cs48-double-rule,
+        .cs48-equal-line {
+            display: block !important;
+            width: 100% !important;
+            margin-top: 10px !important;
+            margin-bottom: 0 !important;
+        }
+        .cs48-equal-line-top,
+        .cs48-equal-line-bottom {
+            display: block !important;
+            width: 100% !important;
+            height: 0 !important;
+            border: none !important;
+            border-top: 1.5px solid #1C1C1C !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .cs48-equal-line-top {
+            margin-bottom: 2px !important;
+        }
+
+        .cs48-verified-text {
+            text-align: center;
+            font-size: 10.5px;
+            font-weight: bold;
+            margin-top: 0 !important;
+            margin-bottom: 24px;
+            line-height: 1.1;
+            font-family: 'Times New Roman', Times, serif;
+        }
+
+        /* Side-by-Side View Layout (for dual printed copies) */
+        .cs48-double-page {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: stretch;
+            width: 100%;
+            gap: 8px;
+            background: #ffffff;
+        }
+
+        .cs48-double-page .cs48-card {
+            width: calc(50% - 4px);
+            max-width: none;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="cs48-card">
+        <!-- Top Header -->
+        <div class="cs48-header-top">
+            <span class="cs48-form-num">Civil Service Form No. 48</span>
+        </div>
+
+        <div class="cs48-title">DAILY TIME RECORD</div>
+
+        <!-- Employee Name Line -->
+        <div class="cs48-emp-name">JUAN DELA CRUZ</div>
+
+        <!-- Month Row -->
+        <div class="cs48-month-row">
+            <span>For the month of</span>
+            <div class="cs48-month-val">JULY 2026</div>
+        </div>
+
+        <!-- Official Hours Header -->
+        <div class="cs48-meta-table">
+            <div class="cs48-meta-left">
+                <span>Official hours for arrival</span>
+                <span>and departure</span>
+            </div>
+            <div class="cs48-meta-right">
+                <div class="cs48-meta-line">
+                    <span>Regular days</span>
+                    <div class="cs48-box">8-12 / 1-5</div>
+                </div>
+                <div class="cs48-meta-line">
+                    <span>Saturdays</span>
+                    <div class="cs48-box">---</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Time Logs Grid Table -->
+        <table class="cs48-table">
+            <colgroup>
+                <col class="col-day">
+                <col class="col-am-arrival">
+                <col class="col-am-departure">
+                <col class="col-pm-arrival">
+                <col class="col-pm-departure">
+                <col class="col-hour">
+                <col class="col-minutes">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th rowspan="2">Day</th>
+                    <th colspan="2">A.M.</th>
+                    <th colspan="2">P.M.</th>
+                    <th colspan="2">Undertime</th>
+                </tr>
+                <tr>
+                    <th>Arrival</th>
+                    <th>Departure</th>
+                    <th>Arrival</th>
+                    <th>Departure</th>
+                    <th>Hours</th>
+                    <th>Minutes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Days 1 to 31 -->
+                <tr>
+                    <td>1</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>5</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>6</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>7</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>8</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>9</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>10</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>11</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>12</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>13</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>14</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>15</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>16</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>17</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>18</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>19</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>20</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>21</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>22</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>23</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>24</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>25</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>26</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>27</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>28</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>29</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>30</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>31</td>
+                    <td>8:00</td>
+                    <td>12:00</td>
+                    <td>1:00</td>
+                    <td>5:00</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <!-- Total Row -->
+                <tr>
+                    <td colspan="5" style="text-align: right; font-weight: bold; padding-right: 8px;">Total</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                <!-- Certification Text — stuck to bottom of table -->
+                <tr>
+                    <td colspan="7"
+                        style="white-space: pre-line; text-align: center; font-size: 10px; font-family: 'Times New Roman', Times, serif; font-weight: normal; padding: 5px 2px; line-height: 1.6;">
+                        I Certify on my honor that the above is a true and correct report
+                        of the hours work performed, record of which was daily at
+                        the time of arrival and departure from office.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Employee Signature Line -->
+        <div class="cs48-sig-line"></div>
+        <div class="cs48-sig-label">Signature</div>
+
+        <!-- Double rule divider -->
+        <div class="cs48-equal-line">
+            <span class="cs48-equal-line-top"></span>
+            <span class="cs48-equal-line-bottom"></span>
+        </div>
+        <div class="cs48-verified-text">VERIFIED as to the prescribed office hours</div>
+
+        <!-- In-Charge Signature Line -->
+        <div class="cs48-sig-line"></div>
+        <div class="cs48-sig-label">In Charge</div>
+    </div>
+
+</body>
+
+</html>

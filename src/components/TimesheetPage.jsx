@@ -520,7 +520,29 @@ export default function TimesheetPage({ onClose }) {
     for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
       const baseDay = baseRows.find((r) => r.day === dayNum) || {};
       const customDay = modifiedRows[dayNum] || {};
-      const mergedDay = { ...baseDay, ...customDay };
+
+      // baseDay uses amArrival/amDeparture/pmArrival/pmDeparture (from
+      // buildMonthlyDTR), while modifiedRows uses amIn/amOut/pmIn/pmOut.
+      // Merge them correctly so unchanged fields still get saved — the same
+      // mapping the render section already does at lines 874-897.
+      const mergedDay = {
+        amIn:
+          customDay.amIn !== undefined
+            ? customDay.amIn
+            : baseDay.amArrival || "",
+        amOut:
+          customDay.amOut !== undefined
+            ? customDay.amOut
+            : baseDay.amDeparture || "",
+        pmIn:
+          customDay.pmIn !== undefined
+            ? customDay.pmIn
+            : baseDay.pmArrival || "",
+        pmOut:
+          customDay.pmOut !== undefined
+            ? customDay.pmOut
+            : baseDay.pmDeparture || "",
+      };
 
       const slots = [
         { field: "amIn", value: mergedDay.amIn },

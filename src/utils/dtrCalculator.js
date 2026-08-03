@@ -26,32 +26,199 @@ function getPunchDate(p) {
 }
 
 /**
+ * Collapses punches within `windowSeconds` of each other into one (the last).
+ * Handles ZKTeco double-tap noise (e.g. 17:30:02 and 17:30:10 → one punch).
+ */
+function deduplicatePunches(sorted, windowSeconds = 60) {
+  if (sorted.length === 0) return [];
+  const result = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = result[result.length - 1];
+    const gap = (sorted[i].datetime - prev.datetime) / 1000;
+    if (gap <= windowSeconds) {
+      result[result.length - 1] = sorted[i]; // keep last in cluster
+    } else {
+      result.push(sorted[i]);
+    }
+  }
+  return result;
+}
+
+// ── Time-zone helpers ─────────────────────────────────────────────────────────
+// All thresholds are in decimal hours (e.g. 11.5 = 11:30).
+//
+//   MORNING_END  = 11:30 — before this is firmly "morning"
+//   NOON_END     = 13:00 — noon window is 11:30–12:59, PM starts at 13:00
+//   PM_OUT_MIN   = 16:00 — a punch at or after 4 PM is always a time-OUT
+//                           (off-duty already; cannot be a time-in)
+
+const MORNING_END = 11.5;   // 11:30
+const NOON_END    = 13.0;   // 13:00
+const PM_OUT_MIN  = 16.0;   // 16:00
+
+function decHour(dt) {
+  return dt.getHours() + dt.getMinutes() / 60;
+}
+
+const isMorning    = (dt) => decHour(dt) < MORNING_END;                          // < 11:30
+const inNoonWindow = (dt) => decHour(dt) >= MORNING_END && decHour(dt) < NOON_END; // 11:30–12:59
+const isAfternoon  = (dt) => decHour(dt) >= NOON_END;                            // >= 13:00
+const isLateDay    = (dt) => decHour(dt) >= PM_OUT_MIN;                          // >= 16:00
+
+/**
+ * Assigns deduplicated taps for one day into the four DTR slots.
+ *
+ * Core rules (from CONDITIONS.xlsx):
+ *
+ * ── 4+ punches ───────────────────────────────────────────────────────────────
+ *   Always positional regardless of time:
+ *   tap1 → AM Arrival, tap2 → AM Departure, tap3 → PM Arrival, tap4 → PM Departure.
+ *   (Any beyond tap4 are noise after deduplication.)
+ *
+ * ── 3 punches ────────────────────────────────────────────────────────────────
+ *   tap1 morning, tap2 noon window, tap3 >= 16:00
+ *     → AM in=tap1, AM out=tap2, PM in=blank, PM out=tap3
+ *       (employee tapped noon-out, then came back and only tapped once at
+ *        end of day — 4 PM or later is definitively "off duty / time-out")
+ *
+ *   tap1 morning, tap2 noon window, tap3 afternoon (13:00–15:59)
+ *     → AM in=tap1, AM out=tap2, PM in=tap3, PM out=blank
+ *       (normal day but forgot end-of-day tap)
+ *
+ *   tap1 morning, tap2 afternoon (>= 13:00), tap3 afternoon
+ *     → AM in=tap1, AM out=blank, PM in=tap2, PM out=tap3
+ *       (skipped noon taps entirely)
+ *
+ *   tap1 noon/afternoon (no morning punch at all), tap2 ?, tap3 ?
+ *     → AM blank, PM in=tap1, PM out=tap3
+ *       (arrived after 11:30, no morning record)
+ *
+ * ── 2 punches ────────────────────────────────────────────────────────────────
+ *   tap1 morning, tap2 >= 16:00
+ *     → AM in=tap1, PM out=tap2   (straight through all day)
+ *
+ *   tap1 morning, tap2 afternoon (13:00–15:59)
+ *     → AM in=tap1, PM in=tap2    (straight through, forgot PM out)
+ *
+ *   tap1 morning, tap2 noon window
+ *     → AM in=tap1, AM out=tap2   (left at noon, never returned / no more taps)
+ *
+ *   tap1 noon/afternoon, tap2 afternoon
+ *     → PM in=tap1, PM out=tap2   (no morning punch at all)
+ *
+ * ── 1 punch ──────────────────────────────────────────────────────────────────
+ *   morning         → AM Arrival only
+ *   >= 16:00        → PM Departure only  (arrived off-screen, tapped out late)
+ *   noon/afternoon  → PM Arrival only
+ *
+ * @param {Array} taps - deduplicated punches sorted ascending, each has .datetime (Date)
+ * @returns {{ amArrival, amDeparture, pmArrival, pmDeparture }} — each a Date or null
+ */
+function assignSlots(taps) {
+  let amArrival = null, amDeparture = null, pmArrival = null, pmDeparture = null;
+
+  if (taps.length === 0) {
+    // all blank
+
+  } else if (taps.length === 1) {
+    const dt = taps[0].datetime;
+    if (isMorning(dt)) {
+      amArrival = dt;
+    } else if (isLateDay(dt)) {
+      pmDeparture = dt;
+    } else {
+      // noon window or early afternoon
+      pmArrival = dt;
+    }
+
+  } else if (taps.length === 2) {
+    const t1 = taps[0].datetime;
+    const t2 = taps[1].datetime;
+
+    if (isMorning(t1)) {
+      // Has a morning punch
+      if (isLateDay(t2)) {
+        // Straight-through all day — AM in + PM out
+        amArrival   = t1;
+        pmDeparture = t2;
+      } else if (isAfternoon(t2)) {
+        // AM in + PM in (13:00–15:59), forgot PM out
+        amArrival = t1;
+        pmArrival = t2;
+      } else {
+        // tap2 is in noon window — left at noon, no return tap
+        amArrival   = t1;
+        amDeparture = t2;
+      }
+    } else {
+      // tap1 is noon/afternoon — no morning punch at all
+      pmArrival   = t1;
+      pmDeparture = t2;
+    }
+
+  } else if (taps.length === 3) {
+    const t1 = taps[0].datetime;
+    const t2 = taps[1].datetime;
+    const t3 = taps[2].datetime;
+
+    if (isMorning(t1)) {
+      // Has a morning punch
+      if (inNoonWindow(t2)) {
+        // tap2 is noon-out; tap3 determines if PM in or PM out
+        if (isLateDay(t3)) {
+          // e.g. 7:30, 12:50, 4:00 → AM in, AM out, blank PM in, PM out
+          // (4 PM or later = off duty / time-out, not a time-in)
+          amArrival   = t1;
+          amDeparture = t2;
+          pmArrival   = null;
+          pmDeparture = t3;
+        } else {
+          // e.g. 7:30, 12:30, 1:00 → AM in, AM out, PM in, blank PM out
+          amArrival   = t1;
+          amDeparture = t2;
+          pmArrival   = t3;
+          pmDeparture = null;
+        }
+      } else {
+        // tap2 is afternoon (>= 13:00) — skipped noon taps
+        // e.g. 7:30, 1:00, 5:00 → AM in, blank AM out, PM in, PM out
+        amArrival   = t1;
+        amDeparture = null;
+        pmArrival   = t2;
+        pmDeparture = t3;
+      }
+    } else {
+      // tap1 is noon/afternoon — no morning punch at all
+      // Use first as PM in, last as PM out
+      pmArrival   = t1;
+      pmDeparture = t3;
+    }
+
+  } else {
+    // 4+ punches — always positional, no time checking
+    amArrival   = taps[0].datetime;
+    amDeparture = taps[1].datetime;
+    pmArrival   = taps[2].datetime;
+    pmDeparture = taps[3].datetime;
+  }
+
+  return { amArrival, amDeparture, pmArrival, pmDeparture };
+}
+
+/**
  * Turns raw ZKTeco punches into a CSC Form 48 style DTR grid.
  *
- * ZKTeco's in/out status byte is unreliable across models (people also punch
- * inconsistently), so this uses the standard DTR convention instead:
- * punches before the noon cutoff are AM, punches after are PM. Within each
- * half, the earliest punch is "Arrival" and the latest is "Departure". If a
- * half only has one punch, it's treated as Arrival only (common when staff
- * skip the lunch-break punch).
- *
- * @param {Array} punches  - records from parseAttlog() or loaded from SQLite, for ONE employee
+ * @param {Array} punches        - records from parseAttlog() or loaded from SQLite, for ONE employee
  * @param {number} year
- * @param {number} month   - 1-12
- * @param {number} noonCutoffHour - default 12 (24h clock)
+ * @param {number} month         - 1-12
+ * @param {number} noonStartHour - kept for API compatibility, not used in slot logic
  * @param {Object|null} schedule - optional Official Time schedule
- *   ({ amIn, amOut, pmIn, pmOut, graceMinutes } in 24-hour "HH:MM") used to
- *   auto-compute undertimeHours/undertimeMinutes per day. Omit (or pass
- *   null) to leave undertime blank, e.g. for callers like AttendancePage.jsx
- *   that don't need it.
- * @returns {Array} one row per calendar day of the month:
- *   { day, amArrival, amDeparture, pmArrival, pmDeparture, punchCount,
- *     undertimeHours, undertimeMinutes }
+ *   ({ amIn, amOut, pmIn, pmOut, graceMinutes } in 24-hour "HH:MM")
+ * @returns {Array} one row per calendar day of the month
  */
-export function buildMonthlyDTR(punches, year, month, noonCutoffHour = 12, schedule = null) {
+export function buildMonthlyDTR(punches, year, month, noonStartHour = 12, schedule = null) {
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  // group punches by day-of-month
   const byDay = {};
   for (const p of punches) {
     const dt = getPunchDate(p);
@@ -63,18 +230,18 @@ export function buildMonthlyDTR(punches, year, month, noonCutoffHour = 12, sched
 
   const rows = [];
   for (let day = 1; day <= daysInMonth; day++) {
-    const dayPunches = (byDay[day] || []).sort((a, b) => a.datetime - b.datetime);
+    const sorted = (byDay[day] || []).sort((a, b) => a.datetime - b.datetime);
+    const taps   = deduplicatePunches(sorted, 60);
 
-    const amGroup = dayPunches.filter((p) => p.datetime.getHours() < noonCutoffHour);
-    const pmGroup = dayPunches.filter((p) => p.datetime.getHours() >= noonCutoffHour);
+    const { amArrival, amDeparture, pmArrival, pmDeparture } = assignSlots(taps);
 
     const row = {
       day,
-      amArrival: amGroup[0] ? formatTime(amGroup[0].datetime) : '',
-      amDeparture: amGroup.length > 1 ? formatTime(amGroup[amGroup.length - 1].datetime) : '',
-      pmArrival: pmGroup[0] ? formatTime(pmGroup[0].datetime) : '',
-      pmDeparture: pmGroup.length > 1 ? formatTime(pmGroup[pmGroup.length - 1].datetime) : '',
-      punchCount: dayPunches.length,
+      amArrival:   amArrival   ? formatTime(amArrival)   : '',
+      amDeparture: amDeparture ? formatTime(amDeparture) : '',
+      pmArrival:   pmArrival   ? formatTime(pmArrival)   : '',
+      pmDeparture: pmDeparture ? formatTime(pmDeparture) : '',
+      punchCount: taps.length,
       undertimeHours: '',
       undertimeMinutes: '',
     };
@@ -102,13 +269,9 @@ function formatTime(date) {
 }
 
 /**
- * Parses either a 24-hour "HH:MM" string (how Official Time settings are
- * stored/saved) or a 12-hour display string like "7:15 AM" / "12 PM" (how
- * buildMonthlyDTR's own amArrival/amDeparture/pmArrival/pmDeparture fields,
- * and TimesheetPage's manually-typed values, are formatted) into minutes
- * since midnight. Returns null if the value is empty or unparseable, so
- * callers can treat "no punch" / "no schedule set" as "skip this check"
- * rather than accidentally treating it as midnight.
+ * Parses either a 24-hour "HH:MM" string or a 12-hour display string like
+ * "7:15 AM" / "12 PM" into minutes since midnight. Returns null if empty
+ * or unparseable.
  */
 export function timeStrToMinutes(str) {
   if (!str) return null;
@@ -137,9 +300,8 @@ export function timeStrToMinutes(str) {
 }
 
 /**
- * Formats an Official Time schedule ({ amIn, amOut, pmIn, pmOut } in 24-hour
- * "HH:MM") into the compact display line used on the CS Form 48 header, e.g.
- * "7:00 AM - 12:00 NN / 1:00 - 4:30 PM".
+ * Formats an Official Time schedule into the CS Form 48 header display line,
+ * e.g. "7:00 AM - 12:00 NN / 1:00 - 4:30 PM".
  */
 export function formatOfficialHours(schedule) {
   if (!schedule) return '';
@@ -156,71 +318,34 @@ export function formatOfficialHours(schedule) {
     return `${h}:${mStr} ${meridiem}`;
   };
 
-  const amIn = timeStrToMinutes(schedule.amIn);
+  const amIn  = timeStrToMinutes(schedule.amIn);
   const amOut = timeStrToMinutes(schedule.amOut);
-  const pmIn = timeStrToMinutes(schedule.pmIn);
+  const pmIn  = timeStrToMinutes(schedule.pmIn);
   const pmOut = timeStrToMinutes(schedule.pmOut);
 
-  const amPart =
-    amIn != null && amOut != null
-      ? `${fmt(amIn)} - ${fmt(amOut, true)}`
-      : '';
-  const pmPart =
-    pmIn != null && pmOut != null
-      ? `${fmt(pmIn, true)} - ${fmt(pmOut)}`
-      : '';
+  const amPart = amIn != null && amOut != null ? `${fmt(amIn)} - ${fmt(amOut, true)}` : '';
+  const pmPart = pmIn != null && pmOut != null ? `${fmt(pmIn, true)} - ${fmt(pmOut)}` : '';
 
   return [amPart, pmPart].filter(Boolean).join(' / ');
 }
 
 /**
  * Computes total undertime (in minutes) for one DTR day row against an
- * Official Time schedule: { amIn, amOut, pmIn, pmOut, graceMinutes } in
- * 24-hour "HH:MM".
+ * Official Time schedule: { amIn, amOut, pmIn, pmOut, graceMinutes }.
  *
- * This is a WHOLE-DAY NET model, not four independent boundary checks:
- * total minutes actually rendered for the day is compared against total
- * minutes required, and only the shortfall counts as undertime. This
- * means a late AM arrival is fully forgiven if the employee compensates
- * by staying later in the afternoon — e.g. official time is 7:00-4:00,
- * employee arrives 7:10, employee leaves 4:10 → 0 undertime, because the
- * total span worked still equals the required total, even though they
- * were "late" that morning.
- *
- * `graceMinutes` is NOT used in this calculation at all. It only decides
- * whether a punch would be labeled "late" for display/reporting purposes
- * elsewhere — it does not excuse anyone from making up lost time. A 10
- * minute late arrival with a 15-minute grace period still creates a
- * 10-minute shortfall that must be worked off later the same day, or it
- * shows as undertime; grace just means that arrival itself isn't flagged
- * as tardy.
- *
- * Missing punches are handled two ways:
- *  - If BOTH punches for a half are missing (no lunch-out/lunch-in at
- *    all — i.e. the employee just punches once in the morning and once
- *    in the afternoon with no registered lunch break), the day is
- *    treated as one continuous span from amArrival to pmArrival (see
- *    buildMonthlyDTR's doc comment — a lone PM punch is stored as
- *    `pmArrival`, not `pmDeparture`), minus the scheduled lunch gap.
- *    This avoids incorrectly flagging straight-through workers as
- *    absent all afternoon just because they never tapped for lunch.
- *  - Any other incomplete/unresolvable half (e.g. an employee who
- *    simply never punched again after their AM arrival) contributes 0
- *    rendered minutes for that half, same as before — a genuine missing
- *    half is real, unexplained lost time and should surface as
- *    undertime rather than being silently excused.
+ * WHOLE-DAY NET model: total rendered minutes vs total required.
  */
 export function computeUndertimeMinutes(row, schedule) {
   if (!schedule) return 0;
 
-  const boundAmIn = timeStrToMinutes(schedule.amIn);
+  const boundAmIn  = timeStrToMinutes(schedule.amIn);
   const boundAmOut = timeStrToMinutes(schedule.amOut);
-  const boundPmIn = timeStrToMinutes(schedule.pmIn);
+  const boundPmIn  = timeStrToMinutes(schedule.pmIn);
   const boundPmOut = timeStrToMinutes(schedule.pmOut);
 
-  const amArrival = timeStrToMinutes(row.amArrival);
+  const amArrival   = timeStrToMinutes(row.amArrival);
   const amDeparture = timeStrToMinutes(row.amDeparture);
-  const pmArrival = timeStrToMinutes(row.pmArrival);
+  const pmArrival   = timeStrToMinutes(row.pmArrival);
   const pmDeparture = timeStrToMinutes(row.pmDeparture);
 
   const haveAmBound = boundAmIn != null && boundAmOut != null;
@@ -233,43 +358,30 @@ export function computeUndertimeMinutes(row, schedule) {
 
   let renderedMinutes;
 
-  if (
-    amArrival != null &&
-    amDeparture == null &&
-    pmArrival != null &&
-    pmDeparture == null
-  ) {
-    // Straight-through day: one AM punch, one PM punch, nothing in
-    // between. Treat pmArrival as the day's actual departure (see
-    // comment above) and exclude the scheduled lunch gap so an
-    // unregistered lunch break doesn't read as unworked time.
-    const lunchGapMinutes =
-      haveAmBound && havePmBound ? Math.max(0, boundPmIn - boundAmOut) : 0;
-    renderedMinutes = Math.max(0, pmArrival - amArrival - lunchGapMinutes);
+  if (amArrival != null && amDeparture == null && pmArrival == null && pmDeparture != null) {
+    // Straight-through: AM in + PM out only (no lunch taps)
+    const lunchGap = haveAmBound && havePmBound ? Math.max(0, boundPmIn - boundAmOut) : 0;
+    renderedMinutes = Math.max(0, pmDeparture - amArrival - lunchGap);
+
+  } else if (amArrival != null && amDeparture == null && pmArrival != null && pmDeparture == null) {
+    // Straight-through variant: AM in + PM arrival used as departure proxy
+    const lunchGap = haveAmBound && havePmBound ? Math.max(0, boundPmIn - boundAmOut) : 0;
+    renderedMinutes = Math.max(0, pmArrival - amArrival - lunchGap);
+
   } else {
     const amRendered =
-      amArrival != null && amDeparture != null
-        ? Math.max(0, amDeparture - amArrival)
-        : 0;
+      amArrival != null && amDeparture != null ? Math.max(0, amDeparture - amArrival) : 0;
     const pmRendered =
-      pmArrival != null && pmDeparture != null
-        ? Math.max(0, pmDeparture - pmArrival)
-        : 0;
+      pmArrival != null && pmDeparture != null ? Math.max(0, pmDeparture - pmArrival) : 0;
     renderedMinutes = amRendered + pmRendered;
   }
 
   const shortfall = requiredMinutes - renderedMinutes;
-  if (shortfall <= 0) return 0;
-
-  return Math.round(shortfall);
+  return shortfall <= 0 ? 0 : Math.round(shortfall);
 }
 
 /**
- * Groups all parsed punches by employee PIN, using the same normalization
- * as the rest of the app (see normalizePin above) so a lookup like
- * `byPin[normalizePin(emp.staffNoOnDev)]` reliably finds punches even if
- * the stored PIN and the employee's device ID differ by leading zeros or
- * whitespace.
+ * Groups all parsed punches by employee PIN.
  */
 export function groupByPin(punches) {
   const map = {};

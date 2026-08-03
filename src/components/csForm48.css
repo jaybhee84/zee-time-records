@@ -16,23 +16,17 @@
     /* ----------------------------------------------------
        2. ROW HEIGHT CONTROLS
        ---------------------------------------------------- */
-    --main-header-height: 29px;
-    /* Height of top table header */
-    --data-row-height: 6px;
-    /* Height of time log rows (1-31) */
+    --main-header-height: 31px;
+    --data-row-height: 12px;
 
     /* ----------------------------------------------------
        3. GLOBAL FONT FAMILY & SIZE CONTROLS
        ---------------------------------------------------- */
     --dtr-font-family: Arial, 'Segoe UI', Calibri, sans-serif;
     --title-size: 14px;
-    /* "DAILY TIME RECORD" Header */
     --name-size: 11px;
-    /* Employee Name */
     --form-num-size: 12px;
-    /* Civil Service Form No. 48 text */
     --table-font-size: 12px;
-    /* Default table font size */
 }
 
 /* Printable Page Margins Reset */
@@ -76,7 +70,7 @@ body {
     padding: 4px 6px;
     font-family: var(--dtr-font-family);
     font-size: 13px;
-    color: #000;
+    color: #1C1C1C;
     box-sizing: border-box;
 }
 
@@ -122,7 +116,7 @@ body {
     font-weight: bold;
     font-size: var(--name-size);
     font-family: var(--dtr-font-family);
-    border-bottom: 2px solid #000;
+    border-bottom: 1.75px solid #1C1C1C;
     padding-bottom: 2px;
     margin-top: 8px;
     margin-bottom: 8px;
@@ -152,7 +146,7 @@ body {
 }
 
 .cs48-month-val {
-    border-bottom: 2px solid #000;
+    border-bottom: 1.75px solid #1C1C1C;
     flex: 1;
     text-align: center;
     font-weight: normal;
@@ -211,25 +205,27 @@ body {
 }
 
 .cs48-box {
-    border-bottom: 2px solid #000;
+    border-bottom: 1.75px solid #1C1C1C;
     min-width: 48px;
     text-align: center;
     font-weight: normal;
     margin-left: auto;
 }
 
-/* ---------- Table Styles ---------- */
+/* ----------------------------------------------------
+   TABLE STYLES (OUTER FRAME & INNER GRID)
+   ---------------------------------------------------- */
 .cs48-table {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
     font-size: 11px;
+    border: 1.75px solid #1C1C1C;
 }
 
-/* Base Cells */
 .cs48-table th,
 .cs48-table td {
-    border: 2px solid #000;
+    border: 1.75px solid #1C1C1C;
     padding: 1px 2px;
     font-family: var(--dtr-font-family);
     font-size: var(--table-font-size);
@@ -251,31 +247,60 @@ body {
    8. TABLE SUBHEADERS (Second Row)
    ---------------------------------------------------- */
 .cs48-table thead tr:nth-child(2) th {
-    height: var(--data-row-height);
+    height: 19px;
     font-size: 12px;
     font-weight: normal;
     font-family: var(--dtr-font-family);
-    vertical-align: middle;
+    vertical-align: top;
 }
 
 /* ----------------------------------------------------
-   9. TIME LOGS / DAILY DATA ROWS (Dates 1 to 31)
+   9. TIME LOGS / DAILY DATA ROWS (General Table Body)
    ---------------------------------------------------- */
 .cs48-table tbody td {
-    height: 6px;
+    height: var(--data-row-height);
     font-family: var(--dtr-font-family);
     font-size: var(--table-font-size);
     font-weight: normal;
     vertical-align: middle;
-    text-align: left;
+    text-align: center;
     white-space: nowrap;
-    padding-left: 4px;
 }
 
-/* Targets ONLY the 1st Column (Date numbers 1-31) */
+/* Targets ONLY 1st Column (Date numbers 1-31) */
 .cs48-table tbody td:first-child {
     text-align: center;
-    padding-left: 0;
+    font-weight: normal;
+}
+
+/* ----------------------------------------------------
+   PM DEPARTURE ONLY (Column 5 - Rows 1 to 31)
+   ---------------------------------------------------- */
+.cs48-table tbody tr:nth-child(-n+31) td:nth-child(5) {
+    text-align: right;
+    padding-right: 4px;
+}
+
+/* ----------------------------------------------------
+   9A. CONTROL FOR DATES 1 TO 31 ONLY
+   ---------------------------------------------------- */
+.cs48-table tbody tr:nth-child(-n+31) {
+    height: var(--data-row-height);
+}
+
+.cs48-table tbody tr:nth-child(-n+31) td {
+    padding: 1px 2px;
+    font-size: var(--table-font-size);
+}
+
+/* ----------------------------------------------------
+   9B. CONTROL FOR ARRIVAL COLUMNS ONLY (DAYS 1 TO 31)
+   ---------------------------------------------------- */
+.cs48-table tbody tr:nth-child(-n+31) td:nth-child(2),
+.cs48-table tbody tr:nth-child(-n+31) td:nth-child(4) {
+    text-align: center;
+    font-weight: normal;
+    color: #1C1C1C;
 }
 
 /* Column Width Link Classes */
@@ -307,7 +332,9 @@ body {
     width: var(--col-minutes);
 }
 
-/* Footer & Certificate Styles */
+/* ----------------------------------------------------
+   FOOTER & SIGNATURE LINES (Bottom Section)
+   ---------------------------------------------------- */
 .cs48-cert-text {
     font-size: 10.5px;
     font-weight: bold;
@@ -318,7 +345,7 @@ body {
 }
 
 .cs48-sig-line {
-    border-bottom: 2px solid #000;
+    border-bottom: 1.75px solid #1C1C1C;
     width: 80%;
     margin: 0 auto;
 }
@@ -330,30 +357,41 @@ body {
     margin-top: 2px;
 }
 
+/* ----------------------------------------------------
+   DOUBLE RULE DIVIDER — two solid lines stacked
+   ---------------------------------------------------- */
+.cs48-equal-line {
+    display: block !important;
+    width: 100% !important;
+    margin-top: 10px !important;
+    margin-bottom: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+}
+
+.cs48-equal-line-top,
+.cs48-equal-line-bottom {
+    display: block !important;
+    width: 100% !important;
+    height: 0 !important;
+    border: none !important;
+    border-top: 1.5px solid #1C1C1C !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+}
+
+.cs48-equal-line-top {
+    margin-bottom: 2px !important;
+}
+
 .cs48-verified-text {
     text-align: center;
     font-size: 11px;
     font-weight: bold;
-    margin-bottom: 6px;
-}
-
-/* EQUAL LINES FIX FOR BOTH CLASSES (SCREEN & PRINT) */
-.cs48-double-rule,
-.cs48-equal-line {
-    border-top: none !important;
-    text-align: center !important;
-    font-family: 'Times New Roman', Times, serif !important;
-    font-size: 11px !important;
-    font-weight: bold !important;
-    letter-spacing: -1px !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    margin: 6px 0 3px 0 !important;
-}
-
-/* Generates equal signs automatically if the tag is empty */
-.cs48-double-rule:empty::before {
-    content: "=========================================================================";
+    margin-top: 0 !important;
+    /* Touches equal signs directly */
+    margin-bottom: 10px;
+    line-height: 1.1;
 }
 
 /* Side-by-Side View Layout */

@@ -1,17 +1,13 @@
 import React from "react";
 import "./csForm48.css";
 
-// Converts a logged time value like "07:59 AM" to "07:59 am" — plain
-// lowercase am/pm, no special styling.
+// Converts a logged time value like "07:59 AM" to "07:59 am" — plain lowercase am/pm
 function formatTimeCell(value) {
   if (!value) return "";
   return String(value).replace(/\b(AM|PM)\b/i, (m) => m.toLowerCase());
 }
 
-// Adjust this one value to resize the Day/Date column. Accepts any CSS
-// width value: "6%", "24px", "1.5rem", etc. This is applied as an inline
-// style, so it always overrides csForm48.css — no need to touch the CSS
-// file just to nudge this one column.
+// Inline width override for the Day/Date column
 const DAY_COLUMN_WIDTH = "16%";
 
 // Single CS Form 48 Card Layout
@@ -108,7 +104,9 @@ export function CSForm48Card({
                 <td className="center">{formatTimeCell(r.amArrival)}</td>
                 <td className="center">{formatTimeCell(r.amDeparture)}</td>
                 <td className="center">{formatTimeCell(r.pmArrival)}</td>
-                <td className="center">{formatTimeCell(r.pmDeparture)}</td>
+                <td className="center pm-departure">
+                  {formatTimeCell(r.pmDeparture)}
+                </td>
                 <td className="center">{r.undertimeHours || ""}</td>
                 <td className="center">{r.undertimeMinutes || ""}</td>
               </tr>
@@ -126,9 +124,10 @@ export function CSForm48Card({
         <div className="cs48-sig-line"></div>
         <div className="cs48-sig-label">Signature</div>
 
-        {/* Traditional equal sign divider */}
+        {/* Double rule divider — two stacked lines */}
         <div className="cs48-equal-line">
-          =========================================================================
+          <span className="cs48-equal-line-top"></span>
+          <span className="cs48-equal-line-bottom"></span>
         </div>
 
         <div className="cs48-verified-text">
