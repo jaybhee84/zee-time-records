@@ -148,9 +148,7 @@ const format12HourWithAmPm = (input = "", field = "") => {
 
 /**
  * Converts a formatted 12-hour display string (e.g. "8:00 AM", "12 PM")
- * into the canonical 24-hour "HH:MM:SS" format used for the `timestamp`
- * column everywhere else in the database (ZKTeco import, Vinea import).
- * Returns null if the value can't be parsed.
+ * into canonical 24-hour "HH:MM:SS" format.
  */
 const to24HourTime = (formatted = "") => {
   const match = formatted.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
@@ -198,19 +196,10 @@ export default function TimesheetPage({ onClose }) {
   const [month, setMonth] = useState(now.getMonth() + 1);
 
   const [modifiedRows, setModifiedRows] = useState({});
-  // Track manually unlocked Weekend Days (Sat/Sun)
   const [unlockedDays, setUnlockedDays] = useState({});
-
-  // Official Time schedules (teaching / non-teaching), used to auto-compute
-  // undertime for the selected employee's DTR grid below.
   const [officialTime, setOfficialTime] = useState({});
+  const [saveMessage, setSaveMessage] = useState(null);
 
-  // Save status banner (replaces native alert(), which desyncs Electron
-  // renderer focus and can leave other inputs/modals unclickable until
-  // the user clicks away and back in)
-  const [saveMessage, setSaveMessage] = useState(null); // { type: "success" | "error", text }
-
-  // Holiday & Network state
   const [holidays, setHolidays] = useState({});
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -420,11 +409,6 @@ export default function TimesheetPage({ onClose }) {
   const handleCellChange = (dayNum, field, value) => {
     if (!devPin) return;
 
-    // Store the raw value as typed. Reformatting on every keystroke feeds
-    // the already-formatted text (letters, colon, space) back into the box,
-    // so the next digit gets appended onto "7 AM" instead of "7", corrupting
-    // the digit parsing (e.g. "7:59" mutating into "10:xx"). Formatting is
-    // applied once, on blur, against the clean text the user actually typed.
     setModifiedRows((prev) => ({
       ...prev,
       [dayNum]: {
@@ -521,10 +505,6 @@ export default function TimesheetPage({ onClose }) {
       const baseDay = baseRows.find((r) => r.day === dayNum) || {};
       const customDay = modifiedRows[dayNum] || {};
 
-      // baseDay uses amArrival/amDeparture/pmArrival/pmDeparture (from
-      // buildMonthlyDTR), while modifiedRows uses amIn/amOut/pmIn/pmOut.
-      // Merge them correctly so unchanged fields still get saved — the same
-      // mapping the render section already does at lines 874-897.
       const mergedDay = {
         amIn:
           customDay.amIn !== undefined
@@ -553,12 +533,9 @@ export default function TimesheetPage({ onClose }) {
 
       slots.forEach(({ field, value: rawVal }) => {
         if (rawVal && rawVal.trim() !== "") {
-          // format12HourWithAmPm is idempotent on an already-formatted
-          // string, so this is a safe no-op if onBlur already ran, and a
-          // safety net if Save was clicked before blur fired.
           const formatted = format12HourWithAmPm(rawVal, field);
           const time24 = to24HourTime(formatted);
-          if (!time24) return; // skip anything that didn't parse cleanly
+          if (!time24) return;
           const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(
             dayNum,
           ).padStart(2, "0")} ${time24}`;

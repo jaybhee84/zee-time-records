@@ -5,8 +5,6 @@ const os = require('os');
 const crypto = require('crypto');
 const initSqlJs = require('sql.js');
 
-// Maps Vinea's free-text `Department` values to the subGroup values this
-// app actually filters/displays on.
 const VINEA_DEPARTMENT_TO_SUBGROUP = {
   'GRADE 1 TCHR.': 'Grade 1',
   'GRADE 2 TCHR.': 'Grade 2',
@@ -33,7 +31,6 @@ function mapVineaDepartmentToSubgroup(rawDept) {
   };
 }
 
-// Avoid GPU/compositor glitches on Windows
 app.disableHardwareAcceleration();
 
 const isDev = !app.isPackaged;
@@ -49,7 +46,7 @@ const PAPER_SIZES = {
     windowHeight: 1123,
   },
   FOLIO: {
-    pdfPageSize: { width: 215900, height: 330200 }, // 8.5in x 13in in microns
+    pdfPageSize: { width: 215900, height: 330200 },
     printPageSize: { width: 215900, height: 330200 },
     windowWidth: 816,
     windowHeight: 1248,
@@ -142,8 +139,6 @@ async function runPrintJob(printPayload, captureFn, paperSize = 'A4') {
     if (printWin && !printWin.isDestroyed()) printWin.destroy();
   }
 }
-
-// ---------- SQLite Database Setup (sql.js / WASM) ----------
 
 function saveDbToDisk() {
   if (!db || !dbPath) return;
@@ -274,7 +269,6 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    // Add this line pointing to your icon file in src/assets
     icon: path.join(__dirname, '../src/assets/ZeeTimeRecords.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -296,13 +290,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// ---------- Application Meta IPCs ----------
-
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });
-
-// ---------- USB Dump Import IPCs ----------
 
 ipcMain.handle('pick-attlog-file', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -412,8 +402,6 @@ ipcMain.handle('get-print-job-data', async (event, jobId) => {
   return pendingPrintJobs.get(jobId) || null;
 });
 
-// ---------- Local Authentication IPCs ----------
-
 function hashPassword(password) {
   return crypto.createHash('sha256').update(password || '').digest('hex');
 }
@@ -511,8 +499,6 @@ ipcMain.handle('auth-delete-user', async (event, target) => {
   runQuery('DELETE FROM users WHERE id = ?', [id]);
   return { success: true };
 });
-
-// ---------- Vinea (.mdb) Employee Import ----------
 
 function importVineaPunches(reader) {
   const tableNames = reader.getTableNames();
@@ -644,8 +630,6 @@ ipcMain.handle('import-vinea-employees', async () => {
   }
 });
 
-// ---------- Custom Sub-Groups ----------
-
 ipcMain.handle('load-custom-subgroups', async () => {
   try {
     return getAll('SELECT * FROM custom_subgroups ORDER BY subGroupName ASC');
@@ -693,8 +677,6 @@ ipcMain.handle('delete-custom-subgroup', async (event, id) => {
     return { success: false, error: err.message };
   }
 });
-
-// ---------- Official Time Settings ----------
 
 function getOfficialTimeSettings() {
   const rows = getAll('SELECT * FROM official_time_settings');
@@ -757,8 +739,6 @@ ipcMain.handle(
   },
 );
 
-// ---------- Employee Roster IPCs ----------
-
 ipcMain.handle('load-employees', async () => {
   try {
     return getAll('SELECT * FROM employees ORDER BY familyName ASC, firstName ASC');
@@ -806,8 +786,6 @@ ipcMain.handle('save-employees', async (event, employees) => {
   }
 });
 
-// ---------- Attendance Punch IPCs ----------
-
 ipcMain.handle('get-punches', async (event, { year, month } = {}) => {
   try {
     if (!year || !month) {
@@ -850,7 +828,47 @@ ipcMain.handle('save-punches', async (event, { pin, year, month, newPunches = []
   }
 });
 
-// ---------- DTR PDF Export (Borderless Zero Margins) ----------
+ipcMain.handle('export-attlog', async () => {
+  try {
+    const punches = getAll(
+      'SELECT * FROM punches ORDER BY pin, timestamp',
+      [],
+    );
+
+    if (!punches || punches.length === 0) {
+      return {
+        success: false,
+        error: 'No attendance records (punches) found in the database to export.',
+      };
+    }
+
+    const lines = punches.map((p) => {
+      const ts = String(p.timestamp).replace('T', ' ');
+      return `${p.pin}\t${ts}\t0\t1`;
+    });
+    const content = lines.join('\r\n');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const defaultName = `attlog_export_${today}.dat`;
+
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export Attendance Log',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'ZKTeco Attendance Log', extensions: ['dat', 'txt'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+
+    if (saveResult.canceled) return { canceled: true };
+
+    fs.writeFileSync(saveResult.filePath, content, 'utf-8');
+    return { success: true, filePath: saveResult.filePath, count: punches.length };
+  } catch (err) {
+    console.error('Failed to export attlog:', err);
+    return { success: false, error: err.message };
+  }
+});
 
 function buildDtrPdfOptions(paperSize = 'A4') {
   return {
@@ -926,21 +944,11 @@ ipcMain.handle('get-printers', async () => {
   }
 });
 
-// Sends a PDF file to a printer without going through Chromium's
-// wc.print() pipeline. wc.print()'s custom margins are frequently ignored
-// by the underlying OS print driver on physical printers (it silently
-// falls back to the driver's own default top margin), even though the
-// exact same margins are respected perfectly by printToPDF(). Printing the
-// already-correct PDF directly sidesteps that unreliable negotiation and
-// guarantees the physical printout matches the on-screen preview.
 function printPdfFile(pdfPath, deviceName) {
   return new Promise((resolve, reject) => {
     const { execFile } = require('child_process');
 
     if (process.platform === 'win32') {
-      // Requires: npm install pdf-to-printer
-      // (bundles SumatraPDF, which prints a PDF at its native page size
-      // with no imposed margins.)
       const { print } = require('pdf-to-printer');
       print(pdfPath, { printer: deviceName || undefined, silent: true })
         .then(resolve)
@@ -948,9 +956,6 @@ function printPdfFile(pdfPath, deviceName) {
       return;
     }
 
-    // macOS / Linux: hand off to CUPS directly. lp prints the PDF at its
-    // embedded page size without re-negotiating margins the way Chromium's
-    // print pipeline does.
     const args = ['-o', 'fit-to-page=false'];
     if (deviceName) args.push('-d', deviceName);
     args.push(pdfPath);
@@ -965,8 +970,6 @@ ipcMain.handle('print-dtr', async (event, payload = {}) => {
   const { employees, year, month, deviceName, paperSize = 'A4' } = payload;
   let tmpPath;
   try {
-    // Reuse the exact same rendering path as the preview/export, which is
-    // already confirmed to produce a flush, gap-free PDF.
     const pdfBuffer = await runPrintJob(
       { employees, year, month },
       (wc) => wc.printToPDF(buildDtrPdfOptions(paperSize)),
@@ -985,8 +988,6 @@ ipcMain.handle('print-dtr', async (event, payload = {}) => {
     }
   }
 });
-
-// ---------- Database Backup & Restore IPCs ----------
 
 ipcMain.handle('export-backup', async () => {
   const today = new Date().toISOString().split('T')[0];

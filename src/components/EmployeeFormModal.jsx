@@ -48,6 +48,18 @@ export default function EmployeeFormModal({
     };
   });
 
+  // Track whether "Custom" sub-group mode is active & track custom value
+  const [isCustomSubGroup, setIsCustomSubGroup] = useState(() => {
+    if (!initial) return false;
+    const currentSubGroups = getSubGroups(initial.group);
+    return !currentSubGroups.includes(initial.subGroup);
+  });
+  const [customSubGroup, setCustomSubGroup] = useState(() => {
+    if (!initial) return "";
+    const currentSubGroups = getSubGroups(initial.group);
+    return !currentSubGroups.includes(initial.subGroup) ? initial.subGroup : "";
+  });
+
   const [error, setError] = useState("");
   const isEditing = Boolean(initial);
 
@@ -66,14 +78,34 @@ export default function EmployeeFormModal({
   const handleGroupChange = (e) => {
     const newGroup = e.target.value;
     const availableSubGroups = getSubGroups(newGroup);
+
+    setIsCustomSubGroup(false);
+    setCustomSubGroup("");
+
     setForm((f) => ({
       ...f,
       group: newGroup,
-      // Default to the first available option for the new group if current is invalid
-      subGroup: availableSubGroups.includes(f.subGroup)
-        ? f.subGroup
-        : availableSubGroups[0],
+      subGroup: availableSubGroups[0],
     }));
+  };
+
+  // Handle Sub-Group dropdown selection specifically
+  const handleSubGroupSelect = (e) => {
+    const value = e.target.value;
+    if (value === "CUSTOM_OPTION") {
+      setIsCustomSubGroup(true);
+      setForm((f) => ({ ...f, subGroup: customSubGroup }));
+    } else {
+      setIsCustomSubGroup(false);
+      setForm((f) => ({ ...f, subGroup: value }));
+    }
+  };
+
+  // Handle typing inside custom sub-group text field
+  const handleCustomSubGroupChange = (e) => {
+    const val = e.target.value;
+    setCustomSubGroup(val);
+    setForm((f) => ({ ...f, subGroup: val }));
   };
 
   const handleSubmit = (e) => {
@@ -88,6 +120,10 @@ export default function EmployeeFormModal({
     }
     if (!form.familyName.trim() || !form.firstName.trim()) {
       setError("Family name and first name are required.");
+      return;
+    }
+    if (!form.subGroup.trim()) {
+      setError("Sub-Group field cannot be empty.");
       return;
     }
 
@@ -105,6 +141,7 @@ export default function EmployeeFormModal({
       familyName: form.familyName.trim().toUpperCase(),
       firstName: form.firstName.trim().toUpperCase(),
       middleInitial: form.middleInitial.trim().toUpperCase(),
+      subGroup: form.subGroup.trim(),
     });
   };
 
@@ -228,21 +265,43 @@ export default function EmployeeFormModal({
                 ))}
               </select>
             </label>
+
             <label style={{ flex: 1, minWidth: 0 }}>
               Sub-Group
               <select
                 style={{ width: "100%", boxSizing: "border-box" }}
-                value={form.subGroup}
-                onChange={update("subGroup")}
+                value={isCustomSubGroup ? "CUSTOM_OPTION" : form.subGroup}
+                onChange={handleSubGroupSelect}
               >
                 {currentSubGroups.map((sg) => (
                   <option key={sg} value={sg}>
                     {sg}
                   </option>
                 ))}
+                <option value="CUSTOM_OPTION">+ Add Custom...</option>
               </select>
             </label>
           </div>
+
+          {/* Custom Sub-Group Input Field when "+ Add Custom..." is selected */}
+          {isCustomSubGroup && (
+            <div style={{ marginTop: "10px" }}>
+              <label style={{ display: "block", width: "100%" }}>
+                Custom Sub-Group Name
+                <input
+                  type="text"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    marginTop: "4px",
+                  }}
+                  placeholder="Enter custom sub-group"
+                  value={customSubGroup}
+                  onChange={handleCustomSubGroupChange}
+                />
+              </label>
+            </div>
+          )}
 
           {error && <p className="login-error">{error}</p>}
 

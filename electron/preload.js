@@ -21,18 +21,16 @@ contextBridge.exposeInMainWorld('dtrApi', {
   openDtrPdfExternal: (payload) =>
     ipcRenderer.invoke('open-dtr-pdf-external', payload),
 
-  // USB Drive Detection & Raw File Reads (used for attlog.dat / user.dat / department.dat)
+  // USB Drive Detection & Raw File Reads
   getUsbDrives: () => ipcRenderer.invoke('get-usb-drives'),
   readUsbFile: (params) => ipcRenderer.invoke('read-usb-file', params),
 
-  // Direct printing (in-app printer selection)
+  // Direct printing
   getPrinters: () => ipcRenderer.invoke('get-printers'),
   printDtr: (deviceName, payload) =>
     ipcRenderer.invoke('print-dtr', { ...payload, deviceName }),
 
-  // Hidden Print Window support — used only by PrintRenderWindow.jsx, the
-  // dedicated print-only route that App.jsx renders when it detects the
-  // `print=1` query flag (see main.js's createPrintWindow()).
+  // Hidden Print Window support
   getPrintJobData: (jobId) => ipcRenderer.invoke('get-print-job-data', jobId),
   notifyPrintReady: (jobId) => ipcRenderer.send(`print-window-ready-${jobId}`),
 
@@ -59,4 +57,7 @@ contextBridge.exposeInMainWorld('dtrApi', {
   // Official Time Settings
   getOfficialTime: () => ipcRenderer.invoke('get-official-time'),
   saveOfficialTime: (payload) => ipcRenderer.invoke('save-official-time', payload),
+
+  // Attendance Log Export
+  exportAttlog: (params) => ipcRenderer.invoke('export-attlog', params),
 });

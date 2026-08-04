@@ -75,7 +75,6 @@ export default function AttendancePage({
         setDrives(detected || []);
         if (detected?.length > 0) setSelectedDrive(detected[0].path);
         else {
-          // No removable drives auto-detected — fall back to manual pick.
           setDrives([
             { label: "Default USB Drive / File Picker", path: "file_picker" },
           ]);
@@ -95,10 +94,6 @@ export default function AttendancePage({
   };
 
   // STEP 1: ANALYZE USERS/STAFFS FROM USB (USER.DAT)
-  // user.dat is a binary file (fixed 72-byte records per user), NOT
-  // tab-delimited text — see parseDeviceFiles.js for the byte layout.
-  // Reads directly off the selected drive — no manual "browse for
-  // user.dat" step, same as Vinea's "Analyze Users Staffs".
   const handleSyncUsers = async () => {
     setAuditMessage("");
     setAuditDone(false);
@@ -126,9 +121,6 @@ export default function AttendancePage({
 
       setDeviceUsers(parsedDeviceUsers);
 
-      // Auto-match anywhere the device PIN already equals an employee's
-      // Registry ID / staffNoOnDev, same as before. Anything left over
-      // (mismatched IDs) is handled in the Assign/Unassign grid below.
       let newlyBoundCount = 0;
       const updatedEmployees = employees.map((emp) => {
         const empNorm = normalizePin(emp.staffNoOnDev || emp.registryNumber);
@@ -160,22 +152,16 @@ export default function AttendancePage({
     }
   };
 
-  // Auto-run the analysis the first time a real USB drive is picked, if
-  // there's anything still unlinked — so linking always happens before I/O
-  // download without the admin having to remember to click a button first,
-  // mirroring Vinea's flow.
   useEffect(() => {
     if (!selectedDrive || selectedDrive === "file_picker") return;
-    if (autoSyncedDrive === selectedDrive) return; // already ran for this drive
+    if (autoSyncedDrive === selectedDrive) return;
     const hasUnlinked = employees.some((e) => !e.fprintAssigned);
     if (!hasUnlinked) return;
 
     setAutoSyncedDrive(selectedDrive);
     handleSyncUsers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDrive, employees, autoSyncedDrive]);
 
-  // Audit Calculations
   const linkedEmployees = useMemo(
     () => employees.filter((e) => e.fprintAssigned),
     [employees],
@@ -186,10 +172,6 @@ export default function AttendancePage({
     [employees],
   );
 
-  // MANUAL LINKING: assign / unassign a device Staff ID <-> app employee.
-  // One device ID can only belong to one employee at a time, so assigning
-  // a device ID that's already claimed unassigns the previous holder first
-  // — same rule Vinea's Fingerprint Assignment Module enforces.
   const handleAssign = (devicePin, registryNumber) => {
     if (!registryNumber) return;
     const normDevicePin = normalizePin(devicePin);
@@ -256,10 +238,6 @@ export default function AttendancePage({
   };
 
   // STEP 2: DOWNLOAD ATTENDANCE LOGS (ATTLOG.DAT)
-  // attlog.dat is plain text, so the base64 payload just needs decoding
-  // back to a string before it goes to the existing parseAttlog(). Only
-  // pulls punches for employees already linked in Step 1, same as Vinea
-  // only downloading I/O for assigned Staff IDs.
   const handleDownloadAttendance = async () => {
     setImportStatus(null);
     setSaving(true);
@@ -449,9 +427,6 @@ export default function AttendancePage({
           </p>
         )}
 
-        {/* ASSIGN / UNASSIGN GRID — device Staff IDs on the left, linked (or
-            linkable) app employee on the right, same pairing Vinea's
-            Fingerprint Assignment Module grid does. */}
         {auditDone && (
           <div style={{ marginTop: "16px" }}>
             <div
