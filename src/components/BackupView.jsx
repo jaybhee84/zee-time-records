@@ -173,6 +173,7 @@ export default function BackupView({ employees = [], setEmployees }) {
 
     setExportingAttlog(true);
     try {
+      // Query SQLite database containing the updated 4-punch entries
       let monthPunches = await window.dtrApi?.getPunches({
         month: selectedMonth,
       });
@@ -194,6 +195,7 @@ export default function BackupView({ employees = [], setEmployees }) {
         return;
       }
 
+      // Format as tab-delimited ZKTeco attlog text
       const lines = filteredPunches.map((p) => {
         const pin = p.pin || p.staffNoOnDev || p.registryNumber || "0";
         const timestamp = p.timestamp || p.rawTime || p.datetime || "";
@@ -220,11 +222,10 @@ export default function BackupView({ employees = [], setEmployees }) {
 
       setStatus({
         type: "success",
-        msg: `Successfully exported ${filteredPunches.length} raw records for ${selectedMonth}!`,
+        msg: `Successfully exported ${filteredPunches.length} records for ${selectedMonth}!`,
       });
     } catch (err) {
       console.error("Export error:", err);
-      alert(`Export Error: ${err.message}`);
       setStatus({ type: "error", msg: `Export failed: ${err.message}` });
     } finally {
       setExportingAttlog(false);
@@ -337,7 +338,6 @@ export default function BackupView({ employees = [], setEmployees }) {
     }
   };
 
-  // Reusable inline button styles
   const baseButtonStyle = {
     width: "100%",
     display: "flex",
@@ -354,7 +354,6 @@ export default function BackupView({ employees = [], setEmployees }) {
     transition: "background-color 0.2s",
   };
 
-  // Reusable inline card styles
   const cardStyle = {
     backgroundColor: "#ffffff",
     border: "1px solid #e5e7eb",
@@ -386,7 +385,6 @@ export default function BackupView({ employees = [], setEmployees }) {
         onCancel={() => setConfirmOpen(false)}
       />
 
-      {/* Header */}
       <div style={{ marginBottom: "24px" }}>
         <h2
           style={{
@@ -404,7 +402,6 @@ export default function BackupView({ employees = [], setEmployees }) {
         </p>
       </div>
 
-      {/* Grid Layout forced via inline grid styles */}
       <div
         style={{
           display: "grid",
@@ -412,7 +409,6 @@ export default function BackupView({ employees = [], setEmployees }) {
           gap: "20px",
         }}
       >
-        {/* Card 1: Export Backup */}
         <div style={cardStyle}>
           <div style={{ marginBottom: "16px" }}>
             <h3
@@ -456,7 +452,6 @@ export default function BackupView({ employees = [], setEmployees }) {
           </button>
         </div>
 
-        {/* Card 2: Import Backup */}
         <div style={cardStyle}>
           <div style={{ marginBottom: "16px" }}>
             <h3
@@ -500,7 +495,6 @@ export default function BackupView({ employees = [], setEmployees }) {
           </button>
         </div>
 
-        {/* Card 3: Export Attendance Log */}
         <div style={cardStyle}>
           <div style={{ marginBottom: "16px" }}>
             <h3
@@ -535,7 +529,6 @@ export default function BackupView({ employees = [], setEmployees }) {
               for legacy Vinea software.
             </p>
 
-            {/* Month Picker Box */}
             <div
               style={{
                 marginTop: "16px",
@@ -598,7 +591,6 @@ export default function BackupView({ employees = [], setEmployees }) {
           </button>
         </div>
 
-        {/* Card 4: Import from Vinea */}
         <div style={cardStyle}>
           <div style={{ marginBottom: "16px" }}>
             <h3

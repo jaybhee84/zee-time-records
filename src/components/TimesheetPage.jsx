@@ -38,7 +38,6 @@ const TEACHING_SUBGROUPS = [
 
 const NON_TEACHING_SUBGROUPS = ["Admin", "Job Order"];
 
-// Standard Philippine Legal & Special Holidays (Offline Fallback)
 const STATIC_PH_HOLIDAYS = [
   { month: 1, day: 1, name: "New Year's Day", type: "Legal Holiday" },
   {
@@ -72,9 +71,6 @@ const STATIC_PH_HOLIDAYS = [
   { month: 12, day: 31, name: "Last Day of the Year", type: "Special Holiday" },
 ];
 
-/**
- * Formats user input into 12-Hour Standard Clock Format with AM/PM
- */
 const format12HourWithAmPm = (input = "", field = "") => {
   if (!input) return "";
 
@@ -146,10 +142,6 @@ const format12HourWithAmPm = (input = "", field = "") => {
   return `${h}:${formattedM} ${meridiem}`;
 };
 
-/**
- * Converts a formatted 12-hour display string (e.g. "8:00 AM", "12 PM")
- * into canonical 24-hour "HH:MM:SS" format.
- */
 const to24HourTime = (formatted = "") => {
   const match = formatted.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
   if (!match) return null;
@@ -492,14 +484,7 @@ export default function TimesheetPage({ onClose }) {
       return;
     }
 
-    if (Object.keys(modifiedRows).length === 0) {
-      setSaveMessage({
-        type: "error",
-        text: "No changes detected for the selected employee.",
-      });
-      return;
-    }
-
+    // Collect EXACTLY up to 4 punches per day from the UI state
     const newPunches = [];
     for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
       const baseDay = baseRows.find((r) => r.day === dayNum) || {};
@@ -524,14 +509,15 @@ export default function TimesheetPage({ onClose }) {
             : baseDay.pmDeparture || "",
       };
 
+      // Exactly 4 slots: AM Arrival (0), AM Departure (1), PM Arrival (0), PM Departure (0)
       const slots = [
-        { field: "amIn", value: mergedDay.amIn },
-        { field: "amOut", value: mergedDay.amOut },
-        { field: "pmIn", value: mergedDay.pmIn },
-        { field: "pmOut", value: mergedDay.pmOut },
+        { field: "amIn", value: mergedDay.amIn, status: "0" },
+        { field: "amOut", value: mergedDay.amOut, status: "1" },
+        { field: "pmIn", value: mergedDay.pmIn, status: "0" },
+        { field: "pmOut", value: mergedDay.pmOut, status: "0" },
       ];
 
-      slots.forEach(({ field, value: rawVal }) => {
+      slots.forEach(({ field, value: rawVal, status }) => {
         if (rawVal && rawVal.trim() !== "") {
           const formatted = format12HourWithAmPm(rawVal, field);
           const time24 = to24HourTime(formatted);
@@ -539,11 +525,16 @@ export default function TimesheetPage({ onClose }) {
           const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(
             dayNum,
           ).padStart(2, "0")} ${time24}`;
+
           newPunches.push({
             pin: devPin,
             staffNoOnDev: devPin,
             timestamp: dateStr,
             rawTime: formatted,
+            status: status,
+            verifyType: "1",
+            workCode: "0",
+            reserved: "0",
           });
         }
       });
@@ -551,6 +542,7 @@ export default function TimesheetPage({ onClose }) {
 
     try {
       if (window.dtrApi) {
+        // Backend handle handles overwriting all old logs for the employee/month
         await window.dtrApi.savePunches({
           pin: devPin,
           year,
@@ -559,7 +551,7 @@ export default function TimesheetPage({ onClose }) {
         });
         setSaveMessage({
           type: "success",
-          text: "Timesheet updates saved successfully to local SQLite storage!",
+          text: "Official 4-punch timesheet saved to database! Extra punches removed.",
         });
         setModifiedRows({});
         loadPunches();
@@ -568,7 +560,7 @@ export default function TimesheetPage({ onClose }) {
       console.error("Save error:", err);
       setSaveMessage({
         type: "error",
-        text: "Failed to save changes to local database.",
+        text: "Failed to save changes to database.",
       });
     }
   };

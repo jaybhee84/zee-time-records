@@ -739,6 +739,57 @@ ipcMain.handle(
   },
 );
 
+// Local Holidays
+ipcMain.handle('get-holidays', async () => {
+  try {
+    return getAll('SELECT * FROM local_holidays ORDER BY date ASC');
+  } catch (err) {
+    console.error('Failed to load local holidays:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('save-holiday', async (event, { date, title, type, location } = {}) => {
+  try {
+    if (!date || !title || !type) {
+      return { success: false, error: 'Date, title, and type are required.' };
+    }
+
+    db.run(
+      `INSERT INTO local_holidays (date, title, type, location)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(date) DO UPDATE SET
+         title = excluded.title,
+         type = excluded.type,
+         location = excluded.location`,
+      [date, title, type, location || 'Isabela City']
+    );
+    saveDbToDisk();
+
+    return {
+      success: true,
+      holidays: getAll('SELECT * FROM local_holidays ORDER BY date ASC'),
+    };
+  } catch (err) {
+    console.error('Failed to save holiday:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('delete-holiday', async (event, id) => {
+  try {
+    db.run('DELETE FROM local_holidays WHERE id = ?', [id]);
+    saveDbToDisk();
+    return {
+      success: true,
+      holidays: getAll('SELECT * FROM local_holidays ORDER BY date ASC'),
+    };
+  } catch (err) {
+    console.error('Failed to delete holiday:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('load-employees', async () => {
   try {
     return getAll('SELECT * FROM employees ORDER BY familyName ASC, firstName ASC');
@@ -862,7 +913,7 @@ ipcMain.handle('export-attlog', async () => {
 
     if (saveResult.canceled) return { canceled: true };
 
-    fs.writeFileSync(saveResult.filePath, content, 'utf-8');
+    fs.writeFileSync(saveResult.filePath, content, 'utf-utf-8');
     return { success: true, filePath: saveResult.filePath, count: punches.length };
   } catch (err) {
     console.error('Failed to export attlog:', err);
