@@ -739,7 +739,6 @@ ipcMain.handle(
   },
 );
 
-// Local Holidays
 ipcMain.handle('get-holidays', async () => {
   try {
     return getAll('SELECT * FROM local_holidays ORDER BY date ASC');
@@ -851,29 +850,59 @@ ipcMain.handle('get-punches', async (event, { year, month } = {}) => {
   }
 });
 
-ipcMain.handle('save-punches', async (event, { pin, year, month, newPunches = [] } = {}) => {
+/**
+ * FIXED: OVERWRITE PUNCHES SAFELY
+ * Clears old raw/USB entries for a single date or whole month scope before inserting new values.
+ */
+ipcMain.handle('save-punches', async (event, { pin, date, year, month, newPunches = [] } = {}) => {
   try {
-    const monthFormatted = String(month).padStart(2, '0');
-    const pattern = `${year}-${monthFormatted}-%`;
+    if (!pin) {
+      return { success: false, error: 'Employee PIN/ID is required.' };
+    }
 
-    db.run('DELETE FROM punches WHERE (pin = ? OR staffNoOnDev = ?) AND timestamp LIKE ?', [
-      pin,
-      pin,
-      pattern,
-    ]);
+    db.run('BEGIN TRANSACTION');
 
+    // 1. Wipe existing punches for the target timeframe (either specific day or entire month)
+    if (date) {
+      // Direct overwrite for a single date (e.g., 'YYYY-MM-DD')
+      const pattern = `${date}%`;
+      db.run(
+        'DELETE FROM punches WHERE (pin = ? OR staffNoOnDev = ?) AND timestamp LIKE ?',
+        [pin, pin, pattern]
+      );
+    } else if (year && month) {
+      // Overwrite for the entire month context
+      const monthFormatted = String(month).padStart(2, '0');
+      const pattern = `${year}-${monthFormatted}-%`;
+      db.run(
+        'DELETE FROM punches WHERE (pin = ? OR staffNoOnDev = ?) AND timestamp LIKE ?',
+        [pin, pin, pattern]
+      );
+    }
+
+    // 2. Insert ONLY the finalized punches provided by the frontend UI
     const insertStmt = db.prepare(
       'INSERT INTO punches (pin, staffNoOnDev, timestamp, rawTime) VALUES (?, ?, ?, ?)'
     );
 
     for (const p of newPunches) {
-      insertStmt.run([p.pin, p.staffNoOnDev || p.pin, p.timestamp, p.rawTime]);
+      if (p.timestamp && p.timestamp.trim()) {
+        insertStmt.run([
+          p.pin || pin,
+          p.staffNoOnDev || pin,
+          p.timestamp.trim(),
+          p.rawTime || '',
+        ]);
+      }
     }
     insertStmt.free();
 
+    db.run('COMMIT');
     saveDbToDisk();
+
     return { success: true };
   } catch (err) {
+    db.run('ROLLBACK');
     console.error('Failed to save punches:', err);
     return { success: false, error: err.message };
   }
@@ -882,14 +911,13 @@ ipcMain.handle('save-punches', async (event, { pin, year, month, newPunches = []
 ipcMain.handle('export-attlog', async () => {
   try {
     const punches = getAll(
-      'SELECT * FROM punches ORDER BY pin, timestamp',
-      [],
+      'SELECT * FROM punches ORDER BY pin ASC, timestamp ASC'
     );
 
     if (!punches || punches.length === 0) {
       return {
         success: false,
-        error: 'No attendance records (punches) found in the database to export.',
+        error: 'No attendance records found in the database to export.',
       };
     }
 
@@ -903,7 +931,7 @@ ipcMain.handle('export-attlog', async () => {
     const defaultName = `attlog_export_${today}.dat`;
 
     const saveResult = await dialog.showSaveDialog(mainWindow, {
-      title: 'Export Attendance Log',
+      title: 'Export Official Attendance Log for Vinea',
       defaultPath: defaultName,
       filters: [
         { name: 'ZKTeco Attendance Log', extensions: ['dat', 'txt'] },
@@ -913,7 +941,7 @@ ipcMain.handle('export-attlog', async () => {
 
     if (saveResult.canceled) return { canceled: true };
 
-    fs.writeFileSync(saveResult.filePath, content, 'utf-utf-8');
+    fs.writeFileSync(saveResult.filePath, content, 'utf-8');
     return { success: true, filePath: saveResult.filePath, count: punches.length };
   } catch (err) {
     console.error('Failed to export attlog:', err);
