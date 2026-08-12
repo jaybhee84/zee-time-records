@@ -216,12 +216,15 @@
             border-collapse: collapse;
             table-layout: fixed;
             font-size: 11px;
-            border: 1.75px solid #000;
+            border: 1.5px solid #000;
         }
 
         .cs48-table th,
         .cs48-table td {
-            border: 1.75px solid #000;
+            /* Official form: vertical dividers are stronger than row rules. */
+            border-style: solid;
+            border-color: #000;
+            border-width: 1px 1.5px;
             padding: 1px 2px;
             font-family: var(--dtr-font-family);
             font-size: var(--table-font-size);
@@ -327,8 +330,13 @@
             font-family: 'Times New Roman', Times, serif;
         }
 
+        .cs48-cert-text span {
+            display: block;
+            white-space: nowrap;
+        }
+
         .cs48-sig-line {
-            border-bottom: 1.75px solid #000;
+            border-bottom: 2.25px solid #000;
             width: 85%;
             margin: 0 auto;
         }
@@ -350,19 +358,20 @@
             width: 100% !important;
             margin-top: 10px !important;
             margin-bottom: 0 !important;
-        }
-        .cs48-equal-line-top,
-        .cs48-equal-line-bottom {
-            display: block !important;
-            width: 100% !important;
-            height: 0 !important;
-            border: none !important;
-            border-top: 1.5px solid #1C1C1C !important;
+            overflow: hidden !important;
+            white-space: nowrap !important;
+            color: #1C1C1C !important;
+            font-family: 'Courier New', Courier, monospace !important;
+            font-size: 11px !important;
+            font-weight: 900 !important;
+            -webkit-text-stroke: 0.25px #000;
+            text-shadow: 0 0 0.2px #000;
+            line-height: 0.75 !important;
+            letter-spacing: 0.4px !important;
+            transform: scaleY(1.3);
+            transform-origin: center;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
-        }
-        .cs48-equal-line-top {
-            margin-bottom: 2px !important;
         }
 
         .cs48-verified-text {
@@ -747,11 +756,11 @@
                 </tr>
                 <!-- Certification Text — stuck to bottom of table -->
                 <tr>
-                    <td colspan="7"
+                    <td colspan="7" class="cs48-cert-text"
                         style="white-space: pre-line; text-align: center; font-size: 10px; font-family: 'Times New Roman', Times, serif; font-weight: normal; padding: 5px 2px; line-height: 1.6;">
-                        I Certify on my honor that the above is a true and correct report
-                        of the hours work performed, record of which was daily at
-                        the time of arrival and departure from office.</td>
+                        <span>I Certify on my honor that the above is a true and correct report</span>
+                        <span>of the hours work performed, record of which was daily at</span>
+                        <span>the time of arrival and departure from office.</span></td>
                 </tr>
             </tbody>
         </table>
@@ -761,10 +770,7 @@
         <div class="cs48-sig-label">Signature</div>
 
         <!-- Double rule divider -->
-        <div class="cs48-equal-line">
-            <span class="cs48-equal-line-top"></span>
-            <span class="cs48-equal-line-bottom"></span>
-        </div>
+        <div class="cs48-equal-line">================================================================================</div>
         <div class="cs48-verified-text">VERIFIED as to the prescribed office hours</div>
 
         <!-- In-Charge Signature Line -->

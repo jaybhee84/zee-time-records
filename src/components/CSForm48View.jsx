@@ -117,17 +117,16 @@ export function CSForm48Card({
 
       <div className="cs48-footer">
         <p className="cs48-cert-text">
-          I Certify on my honor that the above is a true and correct report of
-          the hours work performed, record of which was daily at the time of
-          arrival and departure from office.
+          <span>I Certify on my honor that the above is a true and correct report</span>
+          <span>of the hours work performed, record of which was daily at</span>
+          <span>the time of arrival and departure from office.</span>
         </p>
         <div className="cs48-sig-line"></div>
         <div className="cs48-sig-label">Signature</div>
 
         {/* Double rule divider — two stacked lines */}
-        <div className="cs48-equal-line">
-          <span className="cs48-equal-line-top"></span>
-          <span className="cs48-equal-line-bottom"></span>
+        <div className="cs48-equal-line" aria-hidden="true">
+          ================================================================================
         </div>
 
         <div className="cs48-verified-text">

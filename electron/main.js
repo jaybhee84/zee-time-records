@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -37,6 +38,153 @@ const isDev = !app.isPackaged;
 let mainWindow;
 let db;
 let dbPath;
+let manualUpdateCheck = false;
+let updateCheckInProgress = false;
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
+async function checkForUpdates({ manual = false } = {}) {
+  if (updateCheckInProgress) {
+    if (manual) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Check for Updates',
+        message: 'An update check is already in progress.',
+      });
+    }
+    return;
+  }
+
+  if (!app.isPackaged) {
+    if (manual) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Check for Updates',
+        message: 'Update checks are available in the installed application.',
+        detail: `Development version: ${app.getVersion()}`,
+      });
+    }
+    return;
+  }
+
+  manualUpdateCheck = manual;
+  updateCheckInProgress = true;
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    updateCheckInProgress = false;
+    if (manual) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Update Check Failed',
+        message: 'Zee Time Records could not check for updates.',
+        detail: err.message,
+      });
+    }
+  }
+}
+
+function configureAutoUpdater() {
+  autoUpdater.on('update-available', async (info) => {
+    updateCheckInProgress = false;
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Update Available',
+      message: `Zee Time Records ${info.version} is available.`,
+      detail: 'Would you like to download it now? You can continue working while it downloads.',
+      buttons: ['Download Update', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (result.response === 0) autoUpdater.downloadUpdate();
+  });
+
+  autoUpdater.on('update-not-available', async () => {
+    updateCheckInProgress = false;
+    if (!manualUpdateCheck) return;
+    manualUpdateCheck = false;
+    await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'No Updates Available',
+      message: 'Zee Time Records is up to date.',
+      detail: `Installed version: ${app.getVersion()}`,
+    });
+  });
+
+  autoUpdater.on('error', async (err) => {
+    updateCheckInProgress = false;
+    if (!manualUpdateCheck) return;
+    manualUpdateCheck = false;
+    await dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Update Error',
+      message: 'The update could not be completed.',
+      detail: err.message,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Update Ready',
+      message: `Zee Time Records ${info.version} is ready to install.`,
+      detail: 'Restart now to finish installing the update.',
+      buttons: ['Restart and Install', 'Install on Exit'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (result.response === 0) autoUpdater.quitAndInstall();
+  });
+}
+
+function createApplicationMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [{ role: 'quit' }],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Check for Updates...',
+          click: () => checkForUpdates({ manual: true }),
+        },
+        { type: 'separator' },
+        {
+          label: `About Zee Time Records ${app.getVersion()}`,
+          click: () => dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'About Zee Time Records',
+            message: 'Zee Time Records',
+            detail: `Version ${app.getVersion()}`,
+          }),
+        },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 const PAPER_SIZES = {
   A4: {
@@ -211,6 +359,7 @@ async function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       registryNumber TEXT UNIQUE NOT NULL,
       staffNoOnDev TEXT,
+      fprintAssigned INTEGER NOT NULL DEFAULT 0,
       familyName TEXT NOT NULL,
       firstName TEXT NOT NULL,
       middleInitial TEXT,
@@ -254,6 +403,31 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_punches_timestamp ON punches (timestamp);
   `);
 
+  // Existing databases predate persistent biometric-link state. Keep any
+  // device PIN that was explicitly different from the registry number linked,
+  // then persist all future assignments (including matching PINs) explicitly.
+  const employeeColumns = getAll('PRAGMA table_info(employees)');
+  if (!employeeColumns.some((column) => column.name === 'fprintAssigned')) {
+    db.run(
+      'ALTER TABLE employees ADD COLUMN fprintAssigned INTEGER NOT NULL DEFAULT 0',
+    );
+    db.run(`
+      UPDATE employees
+      SET fprintAssigned = 1
+      WHERE staffNoOnDev IS NOT NULL
+        AND TRIM(staffNoOnDev) <> ''
+        AND (
+          TRIM(staffNoOnDev) <> TRIM(registryNumber)
+          OR EXISTS (
+            SELECT 1
+            FROM punches
+            WHERE TRIM(punches.pin) = TRIM(employees.staffNoOnDev)
+               OR TRIM(punches.staffNoOnDev) = TRIM(employees.staffNoOnDev)
+          )
+        )
+    `);
+  }
+
   db.run(`
     INSERT OR IGNORE INTO official_time_settings (category, amIn, amOut, pmIn, pmOut, graceMinutes)
     VALUES ('teaching', '07:00', '12:00', '13:00', '16:30', 0);
@@ -284,6 +458,9 @@ function createWindow() {
 app.whenReady().then(async () => {
   await initDatabase();
   createWindow();
+  createApplicationMenu();
+  configureAutoUpdater();
+  setTimeout(() => checkForUpdates(), 5000);
 });
 
 app.on('window-all-closed', () => {
@@ -813,14 +990,15 @@ ipcMain.handle('save-employees', async (event, employees) => {
 
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO employees 
-      (registryNumber, staffNoOnDev, familyName, firstName, middleInitial, subGroup)
-      VALUES (?, ?, ?, ?, ?, ?)
+      (registryNumber, staffNoOnDev, fprintAssigned, familyName, firstName, middleInitial, subGroup)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const emp of employees) {
       stmt.run([
         emp.registryNumber,
         emp.staffNoOnDev || emp.registryNumber,
+        emp.fprintAssigned ? 1 : 0,
         emp.familyName || '',
         emp.firstName || '',
         emp.middleInitial || '',
