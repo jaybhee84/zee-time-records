@@ -3,6 +3,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('dtrApi', {
   // App Version
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onShowTutorial: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('show-tutorial', listener);
+    return () => ipcRenderer.removeListener('show-tutorial', listener);
+  },
 
   // Authentication
   authUserCount: () => ipcRenderer.invoke('auth-user-count'),

@@ -73,6 +73,7 @@ export default function Sidebar({
         {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
+            data-tutorial={key}
             className={`sidebar-nav-item ${activeTab === key ? "active" : ""}`}
             onClick={() => setActiveTab(key)}
           >

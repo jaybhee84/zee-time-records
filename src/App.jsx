@@ -10,6 +10,9 @@ import PrintDTRPage from "./components/PrintDTRPage.jsx";
 import BackupView from "./components/BackupView.jsx";
 import UserAccountPage from "./components/UserAccountPage.jsx";
 import PrintRenderWindow from "./components/PrintRenderWindow.jsx";
+import TutorialOverlay from "./components/TutorialOverlay.jsx";
+
+const FIRST_RUN_TUTORIAL_KEY = "zee-time-records-tutorial-v1-complete";
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -21,6 +24,7 @@ export default function App() {
   const [loadError, setLoadError] = useState(null);
 
   const [welcomeMessage, setWelcomeMessage] = useState(null);
+  const [tutorialMode, setTutorialMode] = useState(null);
   const isInitialMount = useRef(true);
 
   // Check early for dedicated print windows
@@ -29,28 +33,33 @@ export default function App() {
     return <PrintRenderWindow jobId={printParams.get("jobId")} />;
   }
 
-  // Release focus safely on document click
-  useEffect(() => {
-    const handlePointerDown = (e) => {
-      const active = document.activeElement;
-      if (active && active !== document.body && !active.contains(e.target)) {
-        if (typeof active.blur === "function") {
-          active.blur();
-        }
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    return () =>
-      window.removeEventListener("pointerdown", handlePointerDown, true);
-  }, []);
-
   // Welcome message auto-dismiss
   useEffect(() => {
     if (!welcomeMessage) return;
     const timer = setTimeout(() => setWelcomeMessage(null), 3500);
     return () => clearTimeout(timer);
   }, [welcomeMessage]);
+
+  useEffect(() => {
+    const removeListener = window.dtrApi?.onShowTutorial?.(() => {
+      setTutorialMode("full");
+    });
+    return () => removeListener?.();
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (localStorage.getItem(FIRST_RUN_TUTORIAL_KEY)) return;
+    const timer = setTimeout(() => setTutorialMode("mini"), 900);
+    return () => clearTimeout(timer);
+  }, [currentUser]);
+
+  const closeTutorial = () => {
+    if (tutorialMode === "mini") {
+      localStorage.setItem(FIRST_RUN_TUTORIAL_KEY, "true");
+    }
+    setTutorialMode(null);
+  };
 
   // Fetch initial data on login
   useEffect(() => {
@@ -183,6 +192,10 @@ export default function App() {
           </>
         )}
       </main>
+
+      {tutorialMode && (
+        <TutorialOverlay mode={tutorialMode} onClose={closeTutorial} />
+      )}
     </div>
   );
 }
