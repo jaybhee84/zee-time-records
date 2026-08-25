@@ -391,3 +391,30 @@ export function groupByPin(punches) {
   }
   return map;
 }
+
+/**
+ * Returns all punches linked to an employee, whether a source used the Vinea
+ * EmployeeID (registry number) or the biometric device staff number.
+ */
+export function getEmployeePunches(byPin, employee) {
+  if (!employee || !byPin) return [];
+  const aliases = new Set(
+    [employee.registryNumber, employee.staffNoOnDev]
+      .map(normalizePin)
+      .filter(Boolean),
+  );
+  const seen = new Set();
+  const punches = [];
+
+  aliases.forEach((alias) => {
+    (byPin[alias] || []).forEach((punch) => {
+      const key = punch.id ??
+        `${normalizePin(punch.pin)}|${punch.timestamp || punch.rawTime || ""}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      punches.push(punch);
+    });
+  });
+
+  return punches;
+}

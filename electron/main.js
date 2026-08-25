@@ -376,7 +376,8 @@ async function initDatabase() {
       familyName TEXT NOT NULL,
       firstName TEXT NOT NULL,
       middleInitial TEXT,
-      subGroup TEXT
+      subGroup TEXT,
+      sourceGroup TEXT
     );
 
     CREATE TABLE IF NOT EXISTS punches (
@@ -420,6 +421,9 @@ async function initDatabase() {
   // device PIN that was explicitly different from the registry number linked,
   // then persist all future assignments (including matching PINs) explicitly.
   const employeeColumns = getAll('PRAGMA table_info(employees)');
+  if (!employeeColumns.some((column) => column.name === 'sourceGroup')) {
+    db.run('ALTER TABLE employees ADD COLUMN sourceGroup TEXT');
+  }
   if (!employeeColumns.some((column) => column.name === 'fprintAssigned')) {
     db.run(
       'ALTER TABLE employees ADD COLUMN fprintAssigned INTEGER NOT NULL DEFAULT 0',
@@ -802,6 +806,7 @@ ipcMain.handle('import-vinea-employees', async () => {
         familyName: String(row.Lastname || '').trim(),
         firstName: String(row.Firstname || '').trim(),
         middleInitial: String(row.Middlename || '').trim(),
+        sourceGroup: rawDept,
         subGroup,
       });
     }
@@ -1003,8 +1008,8 @@ ipcMain.handle('save-employees', async (event, employees) => {
 
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO employees 
-      (registryNumber, staffNoOnDev, fprintAssigned, familyName, firstName, middleInitial, subGroup)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      (registryNumber, staffNoOnDev, fprintAssigned, familyName, firstName, middleInitial, subGroup, sourceGroup)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const emp of employees) {
@@ -1016,6 +1021,7 @@ ipcMain.handle('save-employees', async (event, employees) => {
         emp.firstName || '',
         emp.middleInitial || '',
         emp.subGroup || '',
+        emp.sourceGroup || '',
       ]);
     }
     stmt.free();
@@ -1045,7 +1051,15 @@ ipcMain.handle('get-punches', async (event, { year, month } = {}) => {
  * FIXED: OVERWRITE PUNCHES SAFELY
  * Clears old raw/USB entries for a single date or whole month scope before inserting new values.
  */
-ipcMain.handle('save-punches', async (event, { pin, date, year, month, newPunches = [] } = {}) => {
+ipcMain.handle('save-punches', async (event, {
+  pin,
+  registryNumber,
+  staffNoOnDev,
+  date,
+  year,
+  month,
+  newPunches = [],
+} = {}) => {
   try {
     if (!pin) {
       return { success: false, error: 'Employee PIN/ID is required.' };
@@ -1053,22 +1067,44 @@ ipcMain.handle('save-punches', async (event, { pin, date, year, month, newPunche
 
     db.run('BEGIN TRANSACTION');
 
-    // 1. Wipe existing punches for the target timeframe (either specific day or entire month)
+    // Vinea records commonly use EmployeeID while biometric files use the
+    // device staff number. Treat every linked value as the same employee so
+    // an edit replaces old punches instead of being appended under an alias.
+    const normalizeIdentifier = (value) => {
+      const trimmed = String(value || '').trim();
+      const withoutLeadingZeros = trimmed.replace(/^0+/, '');
+      return withoutLeadingZeros || (trimmed ? '0' : '');
+    };
+    const employeeIdentifiers = new Set(
+      [pin, registryNumber, staffNoOnDev]
+        .map(normalizeIdentifier)
+        .filter(Boolean),
+    );
+
+    let timeframePattern = null;
     if (date) {
-      // Direct overwrite for a single date (e.g., 'YYYY-MM-DD')
-      const pattern = `${date}%`;
-      db.run(
-        'DELETE FROM punches WHERE (pin = ? OR staffNoOnDev = ?) AND timestamp LIKE ?',
-        [pin, pin, pattern]
-      );
+      timeframePattern = `${date}%`;
     } else if (year && month) {
-      // Overwrite for the entire month context
       const monthFormatted = String(month).padStart(2, '0');
-      const pattern = `${year}-${monthFormatted}-%`;
-      db.run(
-        'DELETE FROM punches WHERE (pin = ? OR staffNoOnDev = ?) AND timestamp LIKE ?',
-        [pin, pin, pattern]
-      );
+      timeframePattern = `${year}-${monthFormatted}-%`;
+    }
+
+    // 1. Wipe existing punches for the target timeframe (either specific day or entire month)
+    if (timeframePattern) {
+      const matchingIds = getAll(
+        'SELECT id, pin, staffNoOnDev FROM punches WHERE timestamp LIKE ?',
+        [timeframePattern],
+      )
+        .filter((punch) =>
+          employeeIdentifiers.has(normalizeIdentifier(punch.pin)) ||
+          employeeIdentifiers.has(normalizeIdentifier(punch.staffNoOnDev)),
+        )
+        .map((punch) => punch.id);
+
+      if (matchingIds.length > 0) {
+        const placeholders = matchingIds.map(() => '?').join(', ');
+        db.run(`DELETE FROM punches WHERE id IN (${placeholders})`, matchingIds);
+      }
     }
 
     // 2. Insert ONLY the finalized punches provided by the frontend UI
@@ -1299,6 +1335,13 @@ ipcMain.handle('import-backup', async () => {
 
     const SQL = await initSqlJs();
     db = new SQL.Database(fileBuffer);
+
+    // Backups made by earlier versions do not contain the Vinea source group
+    // column. Migrate immediately so the next employee save remains valid.
+    const employeeColumns = getAll('PRAGMA table_info(employees)');
+    if (!employeeColumns.some((column) => column.name === 'sourceGroup')) {
+      db.run('ALTER TABLE employees ADD COLUMN sourceGroup TEXT');
+    }
 
     saveDbToDisk();
     return { success: true };

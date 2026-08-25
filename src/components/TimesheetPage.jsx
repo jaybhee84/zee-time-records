@@ -16,27 +16,19 @@ import {
 import {
   groupByPin,
   buildMonthlyDTR,
-  normalizePin,
+  getEmployeePunches,
 } from "../utils/dtrCalculator.js";
+import {
+  TEACHING_SUBGROUPS,
+  NON_TEACHING_SUBGROUPS,
+  isTeachingSubgroup,
+  isNonTeachingSubgroup,
+  getGroupOptions,
+  employeeMatchesGroup,
+  subgroupMatches,
+} from "../utils/employeeGroups.js";
 
 const now = new Date();
-
-const TEACHING_SUBGROUPS = [
-  "Kinder",
-  "Grade 1",
-  "Grade 2",
-  "Grade 3",
-  "Grade 4",
-  "Grade 5",
-  "Grade 6",
-  "SNED",
-  "Departmental",
-  "Subject Teacher",
-  "Alive",
-  "Substitute Teacher",
-];
-
-const NON_TEACHING_SUBGROUPS = ["Admin", "Job Order"];
 
 const STATIC_PH_HOLIDAYS = [
   { month: 1, day: 1, name: "New Year's Day", type: "Legal Holiday" },
@@ -159,24 +151,6 @@ const to24HourTime = (formatted = "") => {
   return `${String(h).padStart(2, "0")}:${m}:00`;
 };
 
-const isTeachingSubgroup = (subGroup = "") => {
-  const normalized = subGroup.trim().toLowerCase();
-  return (
-    TEACHING_SUBGROUPS.some((sg) => sg.toLowerCase() === normalized) ||
-    normalized === "sped" ||
-    normalized.startsWith("subject teacher") ||
-    normalized.startsWith("substitute teacher")
-  );
-};
-
-const isNonTeachingSubgroup = (subGroup = "") => {
-  const normalized = subGroup.trim().toLowerCase();
-  return (
-    NON_TEACHING_SUBGROUPS.some((sg) => sg.toLowerCase() === normalized) ||
-    !isTeachingSubgroup(subGroup)
-  );
-};
-
 export default function TimesheetPage({ onClose }) {
   const [employees, setEmployees] = useState([]);
   const [punches, setPunches] = useState([]);
@@ -296,6 +270,35 @@ export default function TimesheetPage({ onClose }) {
   }, [loadPunches]);
 
   const byPin = useMemo(() => groupByPin(punches), [punches]);
+  const groupOptions = useMemo(() => getGroupOptions(employees), [employees]);
+  const teachingSubgroupOptions = useMemo(() => {
+    const list = [...TEACHING_SUBGROUPS];
+    employees.forEach((employee) => {
+      const value = employee?.subGroup?.trim();
+      if (
+        value &&
+        isTeachingSubgroup(value) &&
+        !list.some((item) => item.toLowerCase() === value.toLowerCase())
+      ) {
+        list.push(value);
+      }
+    });
+    return list;
+  }, [employees]);
+  const nonTeachingSubgroupOptions = useMemo(() => {
+    const list = [...NON_TEACHING_SUBGROUPS];
+    employees.forEach((employee) => {
+      const value = employee?.subGroup?.trim();
+      if (
+        value &&
+        isNonTeachingSubgroup(value) &&
+        !list.some((item) => item.toLowerCase() === value.toLowerCase())
+      ) {
+        list.push(value);
+      }
+    });
+    return list;
+  }, [employees]);
 
   const handleCategoryChange = (e) => {
     setCategory(e.target.value);
@@ -315,39 +318,13 @@ export default function TimesheetPage({ onClose }) {
 
     return employees.filter((emp) => {
       const sg = emp?.subGroup || "";
-
-      if (category === "teaching") {
-        if (!isTeachingSubgroup(sg)) return false;
-        if (subCategory !== "all") {
-          const normSg = sg.trim().toLowerCase();
-          const normSubCat = subCategory.trim().toLowerCase();
-          if (
-            (normSubCat === "sned" || normSubCat === "sped") &&
-            (normSg === "sned" || normSg === "sped")
-          )
-            return true;
-          if (
-            normSubCat.startsWith("subject teacher") &&
-            normSg.startsWith("subject teacher")
-          )
-            return true;
-          if (
-            normSubCat.startsWith("substitute teacher") &&
-            normSg.startsWith("substitute teacher")
-          )
-            return true;
-          return normSg === normSubCat;
-        }
-        return true;
+      if (!employeeMatchesGroup(emp, category)) return false;
+      if (
+        (category === "teaching" || category === "non-teaching") &&
+        subCategory !== "all"
+      ) {
+        return subgroupMatches(sg, subCategory);
       }
-
-      if (category === "non-teaching") {
-        if (!isNonTeachingSubgroup(sg)) return false;
-        if (subCategory !== "all")
-          return sg.trim().toLowerCase() === subCategory.trim().toLowerCase();
-        return true;
-      }
-
       return true;
     });
   }, [employees, category, subCategory]);
@@ -385,13 +362,13 @@ export default function TimesheetPage({ onClose }) {
   const baseRows = useMemo(() => {
     if (!devPin) return [];
     return buildMonthlyDTR(
-      byPin[normalizePin(devPin)] || [],
+      getEmployeePunches(byPin, selectedEmployee),
       year,
       month,
       12,
       selectedSchedule,
     );
-  }, [devPin, byPin, year, month, selectedSchedule]);
+  }, [devPin, byPin, selectedEmployee, year, month, selectedSchedule]);
 
   const daysInMonth = useMemo(
     () => new Date(year, month, 0).getDate(),
@@ -543,12 +520,17 @@ export default function TimesheetPage({ onClose }) {
     try {
       if (window.dtrApi) {
         // Backend handle handles overwriting all old logs for the employee/month
-        await window.dtrApi.savePunches({
+        const result = await window.dtrApi.savePunches({
           pin: devPin,
+          registryNumber: selectedEmployee.registryNumber,
+          staffNoOnDev: selectedEmployee.staffNoOnDev,
           year,
           month,
           newPunches,
         });
+        if (!result?.success) {
+          throw new Error(result?.error || "The edited punches were not saved.");
+        }
         setSaveMessage({
           type: "success",
           text: "Official 4-punch timesheet saved to database! Extra punches removed.",
@@ -694,8 +676,11 @@ export default function TimesheetPage({ onClose }) {
               onChange={handleCategoryChange}
             >
               <option value="all">ALL Employees</option>
-              <option value="teaching">Teaching</option>
-              <option value="non-teaching">Non-Teaching</option>
+              {groupOptions.map((group) => (
+                <option key={group.value} value={group.value}>
+                  {group.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -710,7 +695,7 @@ export default function TimesheetPage({ onClose }) {
                 onChange={handleSubCategoryChange}
               >
                 <option value="all">All Teaching</option>
-                {TEACHING_SUBGROUPS.map((sg) => (
+                {teachingSubgroupOptions.map((sg) => (
                   <option key={sg} value={sg}>
                     {sg}
                   </option>
@@ -730,7 +715,7 @@ export default function TimesheetPage({ onClose }) {
                 onChange={handleSubCategoryChange}
               >
                 <option value="all">All Non-Teaching</option>
-                {NON_TEACHING_SUBGROUPS.map((sg) => (
+                {nonTeachingSubgroupOptions.map((sg) => (
                   <option key={sg} value={sg}>
                     {sg}
                   </option>

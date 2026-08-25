@@ -174,8 +174,12 @@ export default function BackupView({ employees = [], setEmployees }) {
     setExportingAttlog(true);
     try {
       // Query SQLite database containing the updated 4-punch entries
+      const [selectedYear, selectedMonthNumber] = selectedMonth
+        .split("-")
+        .map(Number);
       let monthPunches = await window.dtrApi?.getPunches({
-        month: selectedMonth,
+        year: selectedYear,
+        month: selectedMonthNumber,
       });
       if (!monthPunches || !Array.isArray(monthPunches)) {
         monthPunches = [];
@@ -195,8 +199,53 @@ export default function BackupView({ employees = [], setEmployees }) {
         return;
       }
 
+      // Resolve registry numbers and device staff numbers to one employee key,
+      // then enforce Vinea's finalized DTR shape: at most four chronological
+      // punches for each employee/day.
+      const normalizeIdentifier = (value) => {
+        const trimmed = String(value || "").trim();
+        const withoutLeadingZeros = trimmed.replace(/^0+/, "");
+        return withoutLeadingZeros || (trimmed ? "0" : "");
+      };
+      const aliasToEmployee = new Map();
+      employees.forEach((employee) => {
+        const canonical =
+          normalizeIdentifier(employee.registryNumber) ||
+          normalizeIdentifier(employee.staffNoOnDev);
+        [employee.registryNumber, employee.staffNoOnDev].forEach((value) => {
+          const alias = normalizeIdentifier(value);
+          if (alias && canonical) aliasToEmployee.set(alias, canonical);
+        });
+      });
+
+      const punchesByEmployeeDay = new Map();
+      filteredPunches.forEach((punch) => {
+        const timestamp = punch.timestamp || punch.rawTime || punch.datetime || "";
+        const rawPin = punch.pin || punch.staffNoOnDev || punch.registryNumber || "0";
+        const normalizedPin = normalizeIdentifier(rawPin);
+        const employeeKey = aliasToEmployee.get(normalizedPin) || normalizedPin;
+        const day = String(timestamp).slice(0, 10);
+        const key = `${employeeKey}|${day}`;
+        if (!punchesByEmployeeDay.has(key)) punchesByEmployeeDay.set(key, []);
+        punchesByEmployeeDay.get(key).push(punch);
+      });
+
+      const finalizedPunches = Array.from(punchesByEmployeeDay.values())
+        .flatMap((dayPunches) =>
+          dayPunches
+            .sort((a, b) =>
+              String(a.timestamp || "").localeCompare(String(b.timestamp || "")),
+            )
+            .slice(0, 4),
+        )
+        .sort((a, b) => {
+          const pinCompare = String(a.pin || "").localeCompare(String(b.pin || ""));
+          return pinCompare ||
+            String(a.timestamp || "").localeCompare(String(b.timestamp || ""));
+        });
+
       // Format as tab-delimited ZKTeco attlog text
-      const lines = filteredPunches.map((p) => {
+      const lines = finalizedPunches.map((p) => {
         const pin = p.pin || p.staffNoOnDev || p.registryNumber || "0";
         const timestamp = p.timestamp || p.rawTime || p.datetime || "";
         const punchStatus = p.status ?? "0";
@@ -222,7 +271,7 @@ export default function BackupView({ employees = [], setEmployees }) {
 
       setStatus({
         type: "success",
-        msg: `Successfully exported ${filteredPunches.length} records for ${selectedMonth}!`,
+        msg: `Successfully exported ${finalizedPunches.length} finalized records for ${selectedMonth} (maximum 4 per employee/day).`,
       });
     } catch (err) {
       console.error("Export error:", err);

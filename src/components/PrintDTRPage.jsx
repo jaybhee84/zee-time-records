@@ -19,46 +19,21 @@ import {
 import {
   groupByPin,
   buildMonthlyDTR,
-  normalizePin,
+  getEmployeePunches,
 } from "../utils/dtrCalculator.js";
+import {
+  TEACHING_SUBGROUPS,
+  NON_TEACHING_SUBGROUPS,
+  isTeachingSubgroup,
+  isNonTeachingSubgroup,
+  getGroupOptions,
+  employeeMatchesGroup,
+  subgroupMatches,
+  isImportedGroupValue,
+} from "../utils/employeeGroups.js";
 import CSForm48View from "./CSForm48View.jsx";
 
 const now = new Date();
-
-const TEACHING_SUBGROUPS = [
-  "Kinder",
-  "Grade 1",
-  "Grade 2",
-  "Grade 3",
-  "Grade 4",
-  "Grade 5",
-  "Grade 6",
-  "SNED",
-  "Departmental",
-  "Subject Teacher",
-  "Alive",
-  "Substitute Teacher",
-];
-
-const NON_TEACHING_SUBGROUPS = ["Admin", "Job Order"];
-
-const isTeachingSubgroup = (subGroup = "") => {
-  const normalized = subGroup.trim().toLowerCase();
-  return (
-    TEACHING_SUBGROUPS.some((sg) => sg.toLowerCase() === normalized) ||
-    normalized === "sped" ||
-    normalized.startsWith("subject teacher") ||
-    normalized.startsWith("substitute teacher")
-  );
-};
-
-const isNonTeachingSubgroup = (subGroup = "") => {
-  const normalized = subGroup.trim().toLowerCase();
-  return (
-    NON_TEACHING_SUBGROUPS.some((sg) => sg.toLowerCase() === normalized) ||
-    !isTeachingSubgroup(subGroup)
-  );
-};
 
 // Converts a base64 string into a Blob object URL. This is used instead of
 // a `data:application/pdf;base64,...` URI because Electron/Chromium's
@@ -105,6 +80,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
   const [selectedPrinter, setSelectedPrinter] = useState("");
   const [printing, setPrinting] = useState(false);
   const [printSuccess, setPrintSuccess] = useState(false);
+  const groupOptions = useMemo(() => getGroupOptions(employees), [employees]);
 
   // Dynamically include added Teaching Subgroups from employees
   const teachingSubgroupOptions = useMemo(() => {
@@ -183,43 +159,13 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
 
     return employees.filter((emp) => {
       const sg = emp?.subGroup || "";
-
-      if (category === "teaching") {
-        if (!isTeachingSubgroup(sg)) return false;
-        if (subCategory !== "all") {
-          const normSg = sg.trim().toLowerCase();
-          const normSubCat = subCategory.trim().toLowerCase();
-          if (
-            (normSubCat === "sned" || normSubCat === "sped") &&
-            (normSg === "sned" || normSg === "sped")
-          ) {
-            return true;
-          }
-          if (
-            normSubCat.startsWith("subject teacher") &&
-            normSg.startsWith("subject teacher")
-          ) {
-            return true;
-          }
-          if (
-            normSubCat.startsWith("substitute teacher") &&
-            normSg.startsWith("substitute teacher")
-          ) {
-            return true;
-          }
-          return normSg === normSubCat;
-        }
-        return true;
+      if (!employeeMatchesGroup(emp, category)) return false;
+      if (
+        (category === "teaching" || category === "non-teaching") &&
+        subCategory !== "all"
+      ) {
+        return subgroupMatches(sg, subCategory);
       }
-
-      if (category === "non-teaching") {
-        if (!isNonTeachingSubgroup(sg)) return false;
-        if (subCategory !== "all") {
-          return sg.trim().toLowerCase() === subCategory.trim().toLowerCase();
-        }
-        return true;
-      }
-
       return true;
     });
   }, [employees, category, subCategory]);
@@ -277,7 +223,6 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
   // regardless of what's happening in this page's own DOM/preview state.
   const buildPrintPayload = () => ({
     employees: targetEmployees.map((emp) => {
-      const devPin = emp.staffNoOnDev || emp.registryNumber;
       const familyStr = (emp.familyName || "").toUpperCase();
       const firstStr = (emp.firstName || "").toUpperCase();
       const middleStr = emp.middleInitial
@@ -286,7 +231,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
       const employeeName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
       // When blankDtr is on, pass an empty punch list so every row is blank
       const rows = buildMonthlyDTR(
-        blankDtr ? [] : byPin[normalizePin(devPin)] || [],
+        blankDtr ? [] : getEmployeePunches(byPin, emp),
         year,
         month,
       );
@@ -940,8 +885,11 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                 onChange={handleCategoryChange}
               >
                 <option value="all">ALL</option>
-                <option value="teaching">Teaching</option>
-                <option value="non-teaching">Non-Teaching</option>
+                {groupOptions.map((group) => (
+                  <option key={group.value} value={group.value}>
+                    {group.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -992,7 +940,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                 (Grade Level / Admin-Job Order) both chosen, not left on
                 "ALL". Before that, the list would just be the mixed,
                 unfiltered roster, which isn't a useful picker yet. */}
-            {subCategory !== "all" && (
+            {(subCategory !== "all" || isImportedGroupValue(category)) && (
               <div className="form-group form-group-grow">
                 <label className="form-label">
                   <User size={14} /> Select Employee
@@ -1106,8 +1054,6 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
           activePreviewEmployee &&
           (() => {
             const emp = activePreviewEmployee;
-            const devPin = emp.staffNoOnDev || emp.registryNumber;
-
             const familyStr = (emp.familyName || "").toUpperCase();
             const firstStr = (emp.firstName || "").toUpperCase();
             const middleStr = emp.middleInitial
@@ -1116,7 +1062,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
             const empName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
 
             const rows = buildMonthlyDTR(
-              blankDtr ? [] : byPin[normalizePin(devPin)] || [],
+              blankDtr ? [] : getEmployeePunches(byPin, emp),
               year,
               month,
             );
