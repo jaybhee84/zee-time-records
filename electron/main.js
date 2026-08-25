@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net, Notification } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -40,11 +40,54 @@ let db;
 let dbPath;
 let manualUpdateCheck = false;
 let updateCheckInProgress = false;
+let updateDownloadInProgress = false;
+let updateReadyToInstall = false;
+let updateInstallScheduled = false;
+let downloadedUpdateInfo = null;
+let automaticUpdateTimer = null;
 
-autoUpdater.autoDownload = false;
+const AUTO_UPDATE_START_DELAY_MS = 5000;
+const AUTO_UPDATE_OFFLINE_RETRY_MS = 60000;
+const AUTO_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
+autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
+function notifyAndInstallUpdate(info = downloadedUpdateInfo) {
+  if (!info || updateInstallScheduled) return;
+  updateInstallScheduled = true;
+
+  if (Notification.isSupported()) {
+    new Notification({
+      title: 'Zee Time Records Update',
+      body: `Version ${info.version} is ready. The app will now install the update and restart automatically.`,
+      urgency: 'critical',
+    }).show();
+  }
+
+  // Give the user enough time to read the notification, then install without
+  // requiring a confirmation click. The second argument reopens the app.
+  setTimeout(() => autoUpdater.quitAndInstall(false, true), 6000);
+}
+
 async function checkForUpdates({ manual = false } = {}) {
+  if (updateReadyToInstall) {
+    if (manual) notifyAndInstallUpdate();
+    return false;
+  }
+
+  if (updateDownloadInProgress) {
+    if (manual) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Update Downloading',
+        message: 'The latest update is downloading in the background.',
+        detail: 'You will be notified when it is ready to install.',
+      });
+    }
+    return false;
+  }
+
   if (updateCheckInProgress) {
     if (manual) {
       await dialog.showMessageBox(mainWindow, {
@@ -53,7 +96,7 @@ async function checkForUpdates({ manual = false } = {}) {
         message: 'An update check is already in progress.',
       });
     }
-    return;
+    return false;
   }
 
   if (!app.isPackaged) {
@@ -65,16 +108,29 @@ async function checkForUpdates({ manual = false } = {}) {
         detail: `Development version: ${app.getVersion()}`,
       });
     }
-    return;
+    return false;
+  }
+
+  if (!net.isOnline()) {
+    if (manual) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'No Internet Connection',
+        message: 'Zee Time Records will check for updates when the computer is online.',
+      });
+    }
+    return false;
   }
 
   manualUpdateCheck = manual;
   updateCheckInProgress = true;
   try {
     await autoUpdater.checkForUpdates();
+    return true;
   } catch (err) {
     updateCheckInProgress = false;
-    if (manual) {
+    if (manual && manualUpdateCheck) {
+      manualUpdateCheck = false;
       await dialog.showMessageBox(mainWindow, {
         type: 'error',
         title: 'Update Check Failed',
@@ -82,26 +138,42 @@ async function checkForUpdates({ manual = false } = {}) {
         detail: err.message,
       });
     }
+    return false;
   }
 }
 
+function scheduleAutomaticUpdateCheck(delay = AUTO_UPDATE_CHECK_INTERVAL_MS) {
+  if (!app.isPackaged) return;
+  if (automaticUpdateTimer) clearTimeout(automaticUpdateTimer);
+  automaticUpdateTimer = setTimeout(async () => {
+    automaticUpdateTimer = null;
+    if (!net.isOnline()) {
+      scheduleAutomaticUpdateCheck(AUTO_UPDATE_OFFLINE_RETRY_MS);
+      return;
+    }
+
+    const checkStarted = await checkForUpdates();
+    scheduleAutomaticUpdateCheck(
+      checkStarted
+        ? AUTO_UPDATE_CHECK_INTERVAL_MS
+        : AUTO_UPDATE_OFFLINE_RETRY_MS,
+    );
+  }, delay);
+}
+
 function configureAutoUpdater() {
-  autoUpdater.on('update-available', async (info) => {
+  autoUpdater.on('update-available', () => {
     updateCheckInProgress = false;
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update Available',
-      message: `Zee Time Records ${info.version} is available.`,
-      detail: 'Would you like to download it now? You can continue working while it downloads.',
-      buttons: ['Download Update', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (result.response === 0) autoUpdater.downloadUpdate();
+    updateDownloadInProgress = true;
+  });
+
+  autoUpdater.on('download-progress', () => {
+    updateDownloadInProgress = true;
   });
 
   autoUpdater.on('update-not-available', async () => {
     updateCheckInProgress = false;
+    updateDownloadInProgress = false;
     if (!manualUpdateCheck) return;
     manualUpdateCheck = false;
     await dialog.showMessageBox(mainWindow, {
@@ -114,6 +186,8 @@ function configureAutoUpdater() {
 
   autoUpdater.on('error', async (err) => {
     updateCheckInProgress = false;
+    updateDownloadInProgress = false;
+    scheduleAutomaticUpdateCheck(AUTO_UPDATE_OFFLINE_RETRY_MS);
     if (!manualUpdateCheck) return;
     manualUpdateCheck = false;
     await dialog.showMessageBox(mainWindow, {
@@ -125,16 +199,12 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', async (info) => {
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update Ready',
-      message: `Zee Time Records ${info.version} is ready to install.`,
-      detail: 'Restart now to finish installing the update.',
-      buttons: ['Restart and Install', 'Install on Exit'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (result.response === 0) autoUpdater.quitAndInstall();
+    updateCheckInProgress = false;
+    updateDownloadInProgress = false;
+    updateReadyToInstall = true;
+    downloadedUpdateInfo = info;
+    manualUpdateCheck = false;
+    notifyAndInstallUpdate(info);
   });
 }
 
@@ -473,11 +543,14 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.jaybhee.zkteco-dtr');
+  }
   await initDatabase();
   createWindow();
   createApplicationMenu();
   configureAutoUpdater();
-  setTimeout(() => checkForUpdates(), 5000);
+  scheduleAutomaticUpdateCheck(AUTO_UPDATE_START_DELAY_MS);
 });
 
 app.on('window-all-closed', () => {
