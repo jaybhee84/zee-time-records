@@ -115,7 +115,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
   }, [employees]);
 
   // Always fetch punches fresh from SQLite for the selected month so that
-  // edits saved in TimesheetPage are immediately reflected here without
+  // report-preparation edits are immediately reflected here without
   // requiring a full app reload. The `punches` prop is the initial load
   // from the parent; `localPunches` overrides it once the fetch resolves.
   const [localPunches, setLocalPunches] = useState(null);

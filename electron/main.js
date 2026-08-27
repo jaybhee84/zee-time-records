@@ -293,8 +293,8 @@ const pendingPrintJobs = new Map();
 function loadAppInto(win, queryString = '') {
   if (isDev) {
     const url = queryString
-      ? `http://localhost:5173/?${queryString}`
-      : 'http://localhost:5173';
+      ? `http://localhost:5174/?${queryString}`
+      : 'http://localhost:5174';
     win.loadURL(url);
   } else {
     const filePath = path.join(__dirname, '../dist/index.html');

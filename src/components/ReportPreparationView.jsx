@@ -12,6 +12,7 @@ import {
   Lock,
   Unlock,
   X,
+  FileDown,
 } from "lucide-react";
 import {
   groupByPin,
@@ -151,7 +152,7 @@ const to24HourTime = (formatted = "") => {
   return `${String(h).padStart(2, "0")}:${m}:00`;
 };
 
-export default function TimesheetPage({ onClose }) {
+export default function ReportPreparationView({ onClose }) {
   const [employees, setEmployees] = useState([]);
   const [punches, setPunches] = useState([]);
 
@@ -165,6 +166,10 @@ export default function TimesheetPage({ onClose }) {
   const [unlockedDays, setUnlockedDays] = useState({});
   const [officialTime, setOfficialTime] = useState({});
   const [saveMessage, setSaveMessage] = useState(null);
+  const [exportingAttlog, setExportingAttlog] = useState(false);
+  const [exportMonth, setExportMonth] = useState(
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
+  );
 
   const [holidays, setHolidays] = useState({});
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -533,7 +538,7 @@ export default function TimesheetPage({ onClose }) {
         }
         setSaveMessage({
           type: "success",
-          text: "Official 4-punch timesheet saved to database! Extra punches removed.",
+          text: "Print-ready attendance records saved! Extra punches removed.",
         });
         setModifiedRows({});
         loadPunches();
@@ -547,6 +552,135 @@ export default function TimesheetPage({ onClose }) {
     }
   };
 
+  const handleExportAttlog = async () => {
+    if (!exportMonth) {
+      setSaveMessage({
+        type: "error",
+        text: "Select a month before exporting.",
+      });
+      return;
+    }
+
+    const selectedMonth = exportMonth;
+    const [exportYear, exportMonthNumber] = selectedMonth.split("-").map(Number);
+    setExportingAttlog(true);
+
+    try {
+      let monthPunches = await window.dtrApi?.getPunches({
+        year: exportYear,
+        month: exportMonthNumber,
+      });
+      if (!Array.isArray(monthPunches)) monthPunches = [];
+
+      const filteredPunches = monthPunches.filter((punch) => {
+        const timestamp =
+          punch.timestamp || punch.rawTime || punch.datetime || "";
+        return timestamp.startsWith(selectedMonth);
+      });
+
+      if (filteredPunches.length === 0) {
+        setSaveMessage({
+          type: "error",
+          text: `No attendance records found for ${selectedMonth}.`,
+        });
+        return;
+      }
+
+      const normalizeIdentifier = (value) => {
+        const trimmed = String(value || "").trim();
+        const withoutLeadingZeros = trimmed.replace(/^0+/, "");
+        return withoutLeadingZeros || (trimmed ? "0" : "");
+      };
+
+      const aliasToEmployee = new Map();
+      employees.forEach((employee) => {
+        const canonical =
+          normalizeIdentifier(employee.registryNumber) ||
+          normalizeIdentifier(employee.staffNoOnDev);
+
+        [employee.registryNumber, employee.staffNoOnDev].forEach((value) => {
+          const alias = normalizeIdentifier(value);
+          if (alias && canonical) aliasToEmployee.set(alias, canonical);
+        });
+      });
+
+      const punchesByEmployeeDay = new Map();
+      filteredPunches.forEach((punch) => {
+        const timestamp =
+          punch.timestamp || punch.rawTime || punch.datetime || "";
+        const rawPin =
+          punch.pin || punch.staffNoOnDev || punch.registryNumber || "0";
+        const normalizedPin = normalizeIdentifier(rawPin);
+        const employeeKey = aliasToEmployee.get(normalizedPin) || normalizedPin;
+        const day = String(timestamp).slice(0, 10);
+        const key = `${employeeKey}|${day}`;
+
+        if (!punchesByEmployeeDay.has(key)) {
+          punchesByEmployeeDay.set(key, []);
+        }
+        punchesByEmployeeDay.get(key).push(punch);
+      });
+
+      const finalizedPunches = Array.from(punchesByEmployeeDay.values())
+        .flatMap((dayPunches) =>
+          dayPunches
+            .sort((a, b) =>
+              String(a.timestamp || "").localeCompare(
+                String(b.timestamp || ""),
+              ),
+            )
+            .slice(0, 4),
+        )
+        .sort((a, b) => {
+          const pinCompare = String(a.pin || "").localeCompare(
+            String(b.pin || ""),
+          );
+          return (
+            pinCompare ||
+            String(a.timestamp || "").localeCompare(String(b.timestamp || ""))
+          );
+        });
+
+      const lines = finalizedPunches.map((punch) => {
+        const pin =
+          punch.pin || punch.staffNoOnDev || punch.registryNumber || "0";
+        const timestamp =
+          punch.timestamp || punch.rawTime || punch.datetime || "";
+        const punchStatus = punch.status ?? "0";
+        const verifyType = punch.verifyType ?? "1";
+        const workCode = punch.workCode ?? "0";
+        const reserved = punch.reserved ?? "0";
+
+        return `${pin}\t${timestamp}\t${punchStatus}\t${verifyType}\t${workCode}\t${reserved}`;
+      });
+
+      const blob = new Blob([lines.join("\r\n")], {
+        type: "text/plain;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `attlog_${selectedMonth}.dat`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setSaveMessage({
+        type: "success",
+        text: `Exported ${finalizedPunches.length} attendance records for ${selectedMonth}.`,
+      });
+    } catch (err) {
+      console.error("Export error:", err);
+      setSaveMessage({
+        type: "error",
+        text: `Export failed: ${err.message}`,
+      });
+    } finally {
+      setExportingAttlog(false);
+    }
+  };
+
   const handleClose = () => {
     if (typeof onClose === "function") {
       onClose();
@@ -556,9 +690,9 @@ export default function TimesheetPage({ onClose }) {
   };
 
   return (
-    <div className="page timesheet-page">
+    <div className="page report-preparation-view">
       <style>{`
-        .timesheet-page { max-width: 1280px; margin: 0 auto; padding: 8px 12px; font-family: system-ui, -apple-system, sans-serif; }
+        .report-preparation-view { max-width: 1280px; margin: 0 auto; padding: 8px 12px; font-family: system-ui, -apple-system, sans-serif; }
         .modern-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .modern-header h2 { font-size: 1.4rem; font-weight: 700; color: #0f172a; margin: 0; }
         .modern-header .subtext { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
@@ -568,9 +702,9 @@ export default function TimesheetPage({ onClose }) {
         .btn-secondary-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #f1f5f9; color: #334155; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer; pointer-events: auto !important; }
         .btn-close-modern { display: inline-flex; align-items: center; gap: 8px; background-color: #fff1f2; color: #be123c; font-weight: 600; font-size: 0.875rem; padding: 10px 18px; border-radius: 8px; border: 1px solid #fecdd3; cursor: pointer; pointer-events: auto !important; }
         .btn-close-modern:hover { background-color: #ffe4e6; }
-        .ts-save-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; margin-bottom: 12px; }
-        .ts-save-banner.success { background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-        .ts-save-banner.error { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .rp-save-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; margin-bottom: 12px; }
+        .rp-save-banner.success { background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+        .rp-save-banner.error { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
         .modern-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04); margin-bottom: 24px; }
         .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
         .card-title-row h3 { font-size: 0.95rem; font-weight: 600; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px; }
@@ -580,11 +714,11 @@ export default function TimesheetPage({ onClose }) {
         .form-group-grow { flex-grow: 1; min-width: 240px; }
         .form-label { display: flex; align-items: center; gap: 6px; font-size: 0.725rem; font-weight: 700; text-transform: uppercase; color: #64748b; }
         .form-select, .form-input { height: 40px; padding: 0 12px; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.875rem; color: #0f172a; outline: none; pointer-events: auto !important; }
-        .ts-employee-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
-        .ts-emp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
-        .ts-emp-name { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
-        .ts-emp-placeholder { font-size: 0.9rem; color: #64748b; font-style: italic; }
-        .ts-emp-badge { background-color: #e2e8f0; color: #475569; font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 6px; }
+        .rp-employee-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+        .rp-emp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
+        .rp-emp-name { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
+        .rp-emp-placeholder { font-size: 0.9rem; color: #64748b; font-style: italic; }
+        .rp-emp-badge { background-color: #e2e8f0; color: #475569; font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 6px; }
         
         .dtr-grid-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         .dtr-grid-table th, .dtr-grid-table td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; }
@@ -615,10 +749,10 @@ export default function TimesheetPage({ onClose }) {
       {/* Header */}
       <div className="modern-header">
         <div>
-          <h2>Timesheet Management</h2>
+          <h2>Report Preparation</h2>
           <p className="subtext">
-            Desktop Local Timesheet Data Editor (Click weekend rows to enable
-            time entry)
+            Prepare attendance data for printable DTR output (click weekend
+            rows to enable time entry)
           </p>
         </div>
         <div className="action-buttons">
@@ -651,7 +785,7 @@ export default function TimesheetPage({ onClose }) {
       </div>
 
       {saveMessage && (
-        <div className={`ts-save-banner ${saveMessage.type}`} role="status">
+        <div className={`rp-save-banner ${saveMessage.type}`} role="status">
           {saveMessage.text}
         </div>
       )}
@@ -661,7 +795,7 @@ export default function TimesheetPage({ onClose }) {
         <div className="card-title-row">
           <h3>
             <Filter size={18} className="text-blue" />
-            Timesheet Selection Controls
+            Report Selection Controls
           </h3>
         </div>
 
@@ -789,18 +923,18 @@ export default function TimesheetPage({ onClose }) {
       </section>
 
       {/* DTR Grid Table */}
-      <div className="ts-container">
-        <div className="ts-employee-card">
-          <div className="ts-emp-header">
+      <div className="rp-container">
+        <div className="rp-employee-card">
+          <div className="rp-emp-header">
             {selectedEmployee ? (
               <>
-                <span className="ts-emp-name">{empName}</span>
-                <span className="ts-emp-badge">
+                <span className="rp-emp-name">{empName}</span>
+                <span className="rp-emp-badge">
                   {selectedEmployee.subGroup || "N/A"}
                 </span>
               </>
             ) : (
-              <span className="ts-emp-placeholder">
+              <span className="rp-emp-placeholder">
                 Select a specific employee in the dropdown above to view or edit
                 logs
               </span>
@@ -1039,6 +1173,42 @@ export default function TimesheetPage({ onClose }) {
           </table>
         </div>
       </div>
+
+      <section className="modern-card">
+        <div className="card-title-row">
+          <div>
+            <h3>
+              <FileDown size={18} className="text-blue" />
+              Export Attendance Log
+            </h3>
+            <p className="subtext">
+              Create an attlog.dat file for any available attendance month.
+            </p>
+          </div>
+          <div className="action-buttons">
+            <div className="form-group" style={{ minWidth: "170px" }}>
+              <label className="form-label" htmlFor="export-month">
+                Export Month
+              </label>
+              <input
+                id="export-month"
+                className="form-input"
+                type="month"
+                value={exportMonth}
+                onChange={(event) => setExportMonth(event.target.value)}
+              />
+            </div>
+            <button
+              className="btn-primary-modern"
+              onClick={handleExportAttlog}
+              disabled={exportingAttlog || !exportMonth}
+            >
+              <FileDown size={16} />
+              {exportingAttlog ? "Exporting..." : "Export attlog.dat"}
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

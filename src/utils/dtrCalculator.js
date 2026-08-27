@@ -2,7 +2,7 @@
  * Normalizes a PIN/Staff ID for comparison: coerces to string, trims
  * whitespace, and strips leading zeros (so "007" and "7" are treated as the
  * same device ID). This is the single source of truth for PIN comparison —
- * AttendancePage.jsx, TimesheetPage.jsx, and PrintDTRPage.jsx all import
+ * AttendancePage.jsx, the report preparation view, and PrintDTRPage.jsx import
  * this instead of each rolling their own, so a device PIN with (or without)
  * leading zeros matches consistently across every screen.
  */

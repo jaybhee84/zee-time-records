@@ -4,7 +4,7 @@ import Login from "./components/Login.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import EmployeesPage from "./components/EmployeesPage.jsx";
 import AttendancePage from "./components/AttendancePage.jsx";
-import TimesheetPage from "./components/TimesheetPage.jsx";
+import ReportPreparationView from "./components/ReportPreparationView.jsx";
 import OfficialTimePage from "./components/OfficialTimePage.jsx";
 import PrintDTRPage from "./components/PrintDTRPage.jsx";
 import BackupView from "./components/BackupView.jsx";
@@ -171,8 +171,10 @@ export default function App() {
                 setPunches={setPunches}
               />
             )}
-            {activeTab === "timesheet" && (
-              <TimesheetPage onClose={() => setActiveTab("employees")} />
+            {activeTab === "reportPreparation" && (
+              <ReportPreparationView
+                onClose={() => setActiveTab("employees")}
+              />
             )}
             {activeTab === "officialTime" && <OfficialTimePage />}
             {activeTab === "printDtr" && (

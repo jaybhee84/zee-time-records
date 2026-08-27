@@ -19,7 +19,7 @@ import {
   isImportedGroupValue,
 } from "../utils/employeeGroups.js";
 
-// Mirrors the classification used in TimesheetPage.jsx, so an employee's
+// Mirrors the classification used during report preparation, so an employee's
 // Teaching / Non-Teaching group is always derived consistently from their
 // Sub-Group rather than relying on a `group` field that isn't reliably
 // populated on every employee record.

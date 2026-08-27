@@ -21,7 +21,7 @@ const NAV_ITEMS = [
   { key: "userAccount", label: "User Account", icon: User },
 ];
 
-const TIMESHEET_UNLOCK_CODE = "1984";
+const ACCESS_CODE = "1984";
 
 export default function Sidebar({
   activeTab,
@@ -45,10 +45,16 @@ export default function Sidebar({
     setCodeError(false);
   };
 
+  const handleBrandClick = (event) => {
+    if (event.detail === 5) {
+      openCodeModal();
+    }
+  };
+
   const handleCodeSubmit = (e) => {
     e.preventDefault();
-    if (codeInput.trim() === TIMESHEET_UNLOCK_CODE) {
-      setActiveTab("timesheet");
+    if (codeInput.trim() === ACCESS_CODE) {
+      setActiveTab("reportPreparation");
       closeCodeModal();
     } else {
       setCodeError(true);
@@ -61,7 +67,7 @@ export default function Sidebar({
       <div className="sidebar-brand">
         <span
           className="sidebar-brand-mark"
-          onDoubleClick={openCodeModal}
+          onClick={handleBrandClick}
           style={{ cursor: "default", userSelect: "none" }}
         >
           DTR
@@ -133,7 +139,7 @@ export default function Sidebar({
           >
             <form onSubmit={handleCodeSubmit}>
               <label
-                htmlFor="timesheet-code-input"
+                htmlFor="access-code-input"
                 style={{
                   display: "block",
                   marginBottom: 8,
@@ -146,7 +152,7 @@ export default function Sidebar({
                 Enter access code
               </label>
               <input
-                id="timesheet-code-input"
+                id="access-code-input"
                 type="password"
                 inputMode="numeric"
                 autoFocus

@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   base: './', // Ensures relative asset paths for Electron (file:// protocol)
   server: {
-    port: 5173,
+    port: 5174,
     strictPort: true,
   },
   build: {

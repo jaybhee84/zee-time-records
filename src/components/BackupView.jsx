@@ -544,6 +544,7 @@ export default function BackupView({ employees = [], setEmployees }) {
           </button>
         </div>
 
+        {false && (
         <div style={cardStyle}>
           <div style={{ marginBottom: "16px" }}>
             <h3
@@ -639,6 +640,7 @@ export default function BackupView({ employees = [], setEmployees }) {
             </span>
           </button>
         </div>
+        )}
 
         <div style={cardStyle}>
           <div style={{ marginBottom: "16px" }}>
