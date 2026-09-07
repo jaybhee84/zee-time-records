@@ -269,6 +269,8 @@ export default function BackupView({ employees = [], setEmployees }) {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
+      window.dtrApi?.recordAttlogExport(selectedMonth);
+
       setStatus({
         type: "success",
         msg: `Successfully exported ${finalizedPunches.length} finalized records for ${selectedMonth} (maximum 4 per employee/day).`,

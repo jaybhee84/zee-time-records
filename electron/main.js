@@ -483,6 +483,11 @@ async function initDatabase() {
       graceMinutes INTEGER NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS export_log (
+      monthKey TEXT PRIMARY KEY,
+      exportedAt TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_punches_pin_time ON punches (pin, timestamp);
     CREATE INDEX IF NOT EXISTS idx_punches_timestamp ON punches (timestamp);
   `);
@@ -1246,6 +1251,35 @@ ipcMain.handle('export-attlog', async () => {
   } catch (err) {
     console.error('Failed to export attlog:', err);
     return { success: false, error: err.message };
+  }
+});
+
+// Tracks which "YYYY-MM" periods have already been exported to Vinea, so the
+// UI can warn before a re-export risks appending duplicate punches on top of
+// records Vinea already imported (Vinea's .dat import only adds scans, it
+// never replaces existing ones for a period).
+ipcMain.handle('record-attlog-export', async (event, monthKey) => {
+  try {
+    if (!monthKey) return { success: false, error: 'Month is required.' };
+    db.run(
+      'INSERT INTO export_log (monthKey, exportedAt) VALUES (?, ?) ' +
+        'ON CONFLICT(monthKey) DO UPDATE SET exportedAt = excluded.exportedAt',
+      [monthKey, new Date().toISOString()],
+    );
+    saveDbToDisk();
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to record attlog export:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('get-export-log', async () => {
+  try {
+    return getAll('SELECT monthKey, exportedAt FROM export_log');
+  } catch (err) {
+    console.error('Failed to get export log:', err);
+    return [];
   }
 });
 

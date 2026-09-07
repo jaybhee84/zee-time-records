@@ -65,6 +65,9 @@ contextBridge.exposeInMainWorld('dtrApi', {
 
   // Attendance Log Export
   exportAttlog: (params) => ipcRenderer.invoke('export-attlog', params),
+  recordAttlogExport: (monthKey) =>
+    ipcRenderer.invoke('record-attlog-export', monthKey),
+  getExportLog: () => ipcRenderer.invoke('get-export-log'),
 
   // Local Holidays
   getHolidays: () => ipcRenderer.invoke('get-holidays'),

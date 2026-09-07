@@ -13,6 +13,7 @@ import {
   Unlock,
   X,
   FileDown,
+  AlertTriangle,
 } from "lucide-react";
 import {
   groupByPin,
@@ -63,6 +64,22 @@ const STATIC_PH_HOLIDAYS = [
   { month: 12, day: 30, name: "Rizal Day", type: "Legal Holiday" },
   { month: 12, day: 31, name: "Last Day of the Year", type: "Special Holiday" },
 ];
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const formatExportDate = (isoString) => {
+  if (!isoString) return "an earlier date";
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return "an earlier date";
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
 
 const format12HourWithAmPm = (input = "", field = "") => {
   if (!input) return "";
@@ -173,6 +190,7 @@ export default function ReportPreparationView({ onClose }) {
 
   const [holidays, setHolidays] = useState({});
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [exportLog, setExportLog] = useState([]);
 
   useEffect(() => {
     if (!saveMessage) return;
@@ -258,6 +276,11 @@ export default function ReportPreparationView({ onClose }) {
         .catch((err) =>
           console.error("Failed to load Official Time settings:", err),
         );
+
+      window.dtrApi
+        .getExportLog()
+        .then((data) => setExportLog(data || []))
+        .catch((err) => console.error("Failed to load export log:", err));
     }
   }, []);
 
@@ -378,6 +401,14 @@ export default function ReportPreparationView({ onClose }) {
   const daysInMonth = useMemo(
     () => new Date(year, month, 0).getDate(),
     [year, month],
+  );
+
+  const viewedMonthKey = `${year}-${String(month).padStart(2, "0")}`;
+  const viewedMonthExport = exportLog.find(
+    (entry) => entry.monthKey === viewedMonthKey,
+  );
+  const exportMonthExport = exportLog.find(
+    (entry) => entry.monthKey === exportMonth,
   );
 
   const handleCellChange = (dayNum, field, value) => {
@@ -666,6 +697,12 @@ export default function ReportPreparationView({ onClose }) {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
+      window.dtrApi?.recordAttlogExport(selectedMonth);
+      setExportLog((prev) => [
+        ...prev.filter((entry) => entry.monthKey !== selectedMonth),
+        { monthKey: selectedMonth, exportedAt: new Date().toISOString() },
+      ]);
+
       setSaveMessage({
         type: "success",
         text: `Exported ${finalizedPunches.length} attendance records for ${selectedMonth}.`,
@@ -705,6 +742,8 @@ export default function ReportPreparationView({ onClose }) {
         .rp-save-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; margin-bottom: 12px; }
         .rp-save-banner.success { background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
         .rp-save-banner.error { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .rp-save-banner.warning { background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+        .rp-export-warning { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 500; margin-top: 12px; background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; max-width: 420px; }
         .modern-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04); margin-bottom: 24px; }
         .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
         .card-title-row h3 { font-size: 0.95rem; font-weight: 600; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px; }
@@ -787,6 +826,15 @@ export default function ReportPreparationView({ onClose }) {
       {saveMessage && (
         <div className={`rp-save-banner ${saveMessage.type}`} role="status">
           {saveMessage.text}
+        </div>
+      )}
+
+      {selectedEmployee && viewedMonthExport && (
+        <div className="rp-save-banner warning" role="status">
+          <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+          {`${MONTH_NAMES[month - 1]} ${year} was already exported to Vinea on ${formatExportDate(
+            viewedMonthExport.exportedAt,
+          )}. Further edits and a re-export will add new punches on top of what Vinea already imported — clear the old records for this period in Vinea first, or Vinea will read both the old and corrected times.`}
         </div>
       )}
 
@@ -1208,6 +1256,17 @@ export default function ReportPreparationView({ onClose }) {
             </button>
           </div>
         </div>
+
+        {exportMonthExport && (
+          <div className="rp-export-warning">
+            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+            <span>
+              {`This month was already exported on ${formatExportDate(
+                exportMonthExport.exportedAt,
+              )}. Exporting again will only add whatever changed since then — Vinea will still be holding the earlier version of any record you've since edited, so clear those old entries in Vinea before importing this file.`}
+            </span>
+          </div>
+        )}
       </section>
     </div>
   );

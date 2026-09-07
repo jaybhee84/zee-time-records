@@ -6,6 +6,7 @@ import {
   Trash2,
   CheckCircle2,
   XCircle,
+  X,
 } from "lucide-react";
 import EmployeeFormModal from "./EmployeeFormModal.jsx";
 import {
@@ -37,6 +38,7 @@ export default function EmployeesPage({ employees, setEmployees }) {
   const [groupFilter, setGroupFilter] = useState("all");
   const [subGroupFilter, setSubGroupFilter] = useState("all");
   const [modalState, setModalState] = useState(null);
+  const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
   const groupOptions = useMemo(() => getGroupOptions(employees), [employees]);
 
   const handleGroupFilterChange = (e) => {
@@ -112,11 +114,24 @@ export default function EmployeesPage({ employees, setEmployees }) {
     setModalState(null);
   };
 
+  // Native window.confirm() blocks the renderer and, in Electron on Windows,
+  // can leave the window unable to receive clicks afterward until it loses
+  // and regains focus (e.g. alt-tabbing away and back). A plain in-page
+  // modal avoids the native dialog entirely, matching how account deletion
+  // is already confirmed in UserAccountPage.jsx.
   const handleRemove = (registryNumber) => {
-    if (!confirm("Remove this employee?")) return;
+    const target = employees.find((e) => e.registryNumber === registryNumber);
+    if (target) setConfirmDeleteTarget(target);
+  };
+
+  const handleCancelRemove = () => setConfirmDeleteTarget(null);
+
+  const handleConfirmRemove = () => {
+    const registryNumber = confirmDeleteTarget?.registryNumber;
     setEmployees((prev) =>
       prev.filter((e) => e.registryNumber !== registryNumber),
     );
+    setConfirmDeleteTarget(null);
   };
 
   return (
@@ -284,6 +299,48 @@ export default function EmployeesPage({ employees, setEmployees }) {
           onSave={handleSave}
           onClose={() => setModalState(null)}
         />
+      )}
+
+      {confirmDeleteTarget && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>
+                <Trash2 size={18} /> Remove Employee
+              </h3>
+              <button className="icon-btn" onClick={handleCancelRemove}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="employee-form">
+              <p>
+                Are you sure you want to remove{" "}
+                <strong>
+                  {confirmDeleteTarget.familyName}, {confirmDeleteTarget.firstName}
+                </strong>{" "}
+                from the employee list?
+              </p>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={handleCancelRemove}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={handleConfirmRemove}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
