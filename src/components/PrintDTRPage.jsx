@@ -15,11 +15,13 @@ import {
   ChevronLeft,
   ChevronRight,
   FileX,
+  Clock,
 } from "lucide-react";
 import {
   groupByPin,
   buildMonthlyDTR,
   getEmployeePunches,
+  formatOfficialHours,
 } from "../utils/dtrCalculator.js";
 import {
   TEACHING_SUBGROUPS,
@@ -74,6 +76,13 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
 
   // Blank DTR toggle — when on, all rows are printed empty (no log data)
   const [blankDtr, setBlankDtr] = useState(false);
+
+  // Official Time toggle — when on, undertime is computed against each
+  // employee's Official Time schedule (with AM grace period) and the
+  // "Official hours for arrival and departure" box is filled in; when off,
+  // the printed DTR shows raw punches only, matching the prior behavior.
+  const [applyOfficialTime, setApplyOfficialTime] = useState(false);
+  const [officialTime, setOfficialTime] = useState({});
 
   // Printer selection state
   const [printers, setPrinters] = useState([]);
@@ -132,6 +141,23 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
     () => groupByPin(localPunches ?? punches),
     [localPunches, punches],
   );
+
+  useEffect(() => {
+    window.dtrApi
+      ?.getOfficialTime?.()
+      .then((data) => setOfficialTime(data || {}))
+      .catch((err) =>
+        console.error("Failed to load Official Time settings:", err),
+      );
+  }, []);
+
+  const getScheduleForEmployee = (emp) => {
+    if (!applyOfficialTime) return null;
+    const sg = emp?.subGroup || "";
+    if (isTeachingSubgroup(sg)) return officialTime.teaching || null;
+    if (isNonTeachingSubgroup(sg)) return officialTime.nonTeaching || null;
+    return null;
+  };
 
   // Always release the previous blob URL when it changes or the component
   // unmounts, to avoid leaking memory across repeated previews.
@@ -229,13 +255,25 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
         ? `${emp.middleInitial.toUpperCase()}.`
         : "";
       const employeeName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
+      const schedule = getScheduleForEmployee(emp);
       // When blankDtr is on, pass an empty punch list so every row is blank
       const rows = buildMonthlyDTR(
         blankDtr ? [] : getEmployeePunches(byPin, emp),
         year,
         month,
+        12,
+        blankDtr ? null : schedule,
       );
-      return { registryNumber: emp.registryNumber, employeeName, rows };
+      // Omit the key entirely (rather than "") when the toggle is off, so
+      // CSForm48Card falls back to its own default exactly as before.
+      const officialHoursArrival =
+        !blankDtr && schedule ? formatOfficialHours(schedule) : undefined;
+      return {
+        registryNumber: emp.registryNumber,
+        employeeName,
+        rows,
+        ...(officialHoursArrival !== undefined ? { officialHoursArrival } : {}),
+      };
     }),
     year,
     month,
@@ -1024,6 +1062,33 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                 </span>
               </button>
             </div>
+
+            {/* Official Time / Undertime Computation Toggle */}
+            <div className="form-group" style={{ justifyContent: "flex-end" }}>
+              <label className="form-label">
+                <Clock size={14} /> Undertime
+              </label>
+              <button
+                type="button"
+                onClick={() => setApplyOfficialTime((v) => !v)}
+                disabled={blankDtr}
+                className={`blank-dtr-toggle${applyOfficialTime ? " blank-dtr-toggle--on" : ""}`}
+                title={
+                  blankDtr
+                    ? "Not applicable while Blank DTR mode is on"
+                    : applyOfficialTime
+                      ? "Official Time computation is ON — undertime and official hours will be printed"
+                      : "Click to compute undertime against each employee's Official Time schedule"
+                }
+              >
+                <span className="blank-dtr-toggle__track">
+                  <span className="blank-dtr-toggle__thumb" />
+                </span>
+                <span className="blank-dtr-toggle__label">
+                  {applyOfficialTime ? "Official Time: On" : "Official Time: Off"}
+                </span>
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -1061,11 +1126,18 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
               : "";
             const empName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
 
+            const previewSchedule = getScheduleForEmployee(emp);
             const rows = buildMonthlyDTR(
               blankDtr ? [] : getEmployeePunches(byPin, emp),
               year,
               month,
+              12,
+              blankDtr ? null : previewSchedule,
             );
+            const previewOfficialHoursArrival =
+              !blankDtr && previewSchedule
+                ? formatOfficialHours(previewSchedule)
+                : undefined;
 
             return (
               <div
@@ -1125,6 +1197,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                       month={month}
                       rows={rows}
                       isPrintMode={false}
+                      officialHoursArrival={previewOfficialHoursArrival}
                     />
                   </div>
                 </div>

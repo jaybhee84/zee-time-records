@@ -219,6 +219,11 @@ function assignSlots(taps) {
 export function buildMonthlyDTR(punches, year, month, noonStartHour = 12, schedule = null) {
   const daysInMonth = new Date(year, month, 0).getDate();
 
+  // Tracks how many days this month have already used the AM grace-period
+  // forgiveness (capped at GRACE_MAX_USES_PER_MONTH) — shared across the
+  // whole day loop below so the cap applies per employee per month.
+  const graceState = { used: 0 };
+
   const byDay = {};
   for (const p of punches) {
     const dt = getPunchDate(p);
@@ -247,7 +252,7 @@ export function buildMonthlyDTR(punches, year, month, noonStartHour = 12, schedu
     };
 
     if (schedule) {
-      const totalMinutes = computeUndertimeMinutes(row, schedule);
+      const totalMinutes = computeUndertimeMinutes(row, schedule, graceState);
       if (totalMinutes > 0) {
         row.undertimeHours = String(Math.floor(totalMinutes / 60));
         row.undertimeMinutes = String(totalMinutes % 60);
@@ -329,13 +334,30 @@ export function formatOfficialHours(schedule) {
   return [amPart, pmPart].filter(Boolean).join(' / ');
 }
 
+// AM grace-period forgiveness can only be used this many times per month —
+// the 5th+ late morning arrival in a month gets no forgiveness at all, even
+// if it's within graceMinutes.
+const GRACE_MAX_USES_PER_MONTH = 4;
+
 /**
  * Computes total undertime (in minutes) for one DTR day row against an
  * Official Time schedule: { amIn, amOut, pmIn, pmOut, graceMinutes }.
  *
- * WHOLE-DAY NET model: total rendered minutes vs total required.
+ * WHOLE-DAY NET model: total rendered minutes vs total required. Morning
+ * lateness up to `graceMinutes` is forgiven (added back to rendered time)
+ * for the first GRACE_MAX_USES_PER_MONTH late mornings tracked in
+ * `graceState`; afternoon (post-lunch) lateness never gets grace. Because
+ * this is still a whole-day net, any leftover shortfall is still forfeited
+ * if the employee stays late enough in the afternoon to cover it.
+ *
+ * @param {Object} row
+ * @param {Object} schedule
+ * @param {{used: number}} [graceState] - mutable counter of grace uses so
+ *   far this month; pass the same object across a month's rows so the cap
+ *   is enforced per employee per month. Defaults to a fresh counter (grace
+ *   always available) when the caller doesn't track a month.
  */
-export function computeUndertimeMinutes(row, schedule) {
+export function computeUndertimeMinutes(row, schedule, graceState = { used: 0 }) {
   if (!schedule) return 0;
 
   const boundAmIn  = timeStrToMinutes(schedule.amIn);
@@ -356,21 +378,33 @@ export function computeUndertimeMinutes(row, schedule) {
     (haveAmBound ? boundAmOut - boundAmIn : 0) +
     (havePmBound ? boundPmOut - boundPmIn : 0);
 
+  // Forgive up to graceMinutes of AM lateness, capped at 4 uses/month.
+  const graceMinutes = Number(schedule.graceMinutes) || 0;
+  let forgivenAm = 0;
+  if (haveAmBound && amArrival != null) {
+    const amLateness = Math.max(0, amArrival - boundAmIn);
+    if (amLateness > 0 && graceMinutes > 0 && graceState.used < GRACE_MAX_USES_PER_MONTH) {
+      forgivenAm = Math.min(amLateness, graceMinutes);
+      graceState.used += 1;
+    }
+  }
+  const effectiveAmArrival = amArrival != null ? amArrival - forgivenAm : amArrival;
+
   let renderedMinutes;
 
-  if (amArrival != null && amDeparture == null && pmArrival == null && pmDeparture != null) {
+  if (effectiveAmArrival != null && amDeparture == null && pmArrival == null && pmDeparture != null) {
     // Straight-through: AM in + PM out only (no lunch taps)
     const lunchGap = haveAmBound && havePmBound ? Math.max(0, boundPmIn - boundAmOut) : 0;
-    renderedMinutes = Math.max(0, pmDeparture - amArrival - lunchGap);
+    renderedMinutes = Math.max(0, pmDeparture - effectiveAmArrival - lunchGap);
 
-  } else if (amArrival != null && amDeparture == null && pmArrival != null && pmDeparture == null) {
+  } else if (effectiveAmArrival != null && amDeparture == null && pmArrival != null && pmDeparture == null) {
     // Straight-through variant: AM in + PM arrival used as departure proxy
     const lunchGap = haveAmBound && havePmBound ? Math.max(0, boundPmIn - boundAmOut) : 0;
-    renderedMinutes = Math.max(0, pmArrival - amArrival - lunchGap);
+    renderedMinutes = Math.max(0, pmArrival - effectiveAmArrival - lunchGap);
 
   } else {
     const amRendered =
-      amArrival != null && amDeparture != null ? Math.max(0, amDeparture - amArrival) : 0;
+      effectiveAmArrival != null && amDeparture != null ? Math.max(0, amDeparture - effectiveAmArrival) : 0;
     const pmRendered =
       pmArrival != null && pmDeparture != null ? Math.max(0, pmDeparture - pmArrival) : 0;
     renderedMinutes = amRendered + pmRendered;

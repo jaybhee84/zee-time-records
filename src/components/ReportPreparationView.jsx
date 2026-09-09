@@ -19,6 +19,7 @@ import {
   groupByPin,
   buildMonthlyDTR,
   getEmployeePunches,
+  computeUndertimeMinutes,
 } from "../utils/dtrCalculator.js";
 import {
   TEACHING_SUBGROUPS,
@@ -402,6 +403,73 @@ export default function ReportPreparationView({ onClose }) {
     () => new Date(year, month, 0).getDate(),
     [year, month],
   );
+
+  // Recomputes undertime for every day whenever a time cell is edited, so
+  // manually correcting a punch (e.g. fixing a missed AM in) immediately
+  // reflects in the Undertime columns instead of showing the stale value
+  // computed from the original raw punches. Runs across the whole month in
+  // day order (not just the edited row) because the AM grace-period cap is
+  // tracked per employee per month. A day where the admin has directly typed
+  // into the Undertime cells keeps that manual override instead.
+  const effectiveUndertimeByDay = useMemo(() => {
+    const map = {};
+    if (!selectedSchedule) return map;
+
+    const graceState = { used: 0 };
+    for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+      const baseDay = baseRows.find((r) => r.day === dayNum) || {};
+      const dayEdit = modifiedRows[dayNum] || {};
+
+      if (
+        dayEdit.undertimeHours !== undefined ||
+        dayEdit.undertimeMinutes !== undefined
+      ) {
+        map[dayNum] = {
+          hours:
+            dayEdit.undertimeHours !== undefined
+              ? dayEdit.undertimeHours
+              : baseDay.undertimeHours || "",
+          minutes:
+            dayEdit.undertimeMinutes !== undefined
+              ? dayEdit.undertimeMinutes
+              : baseDay.undertimeMinutes || "",
+        };
+        continue;
+      }
+
+      const amArrival =
+        dayEdit.amIn !== undefined
+          ? format12HourWithAmPm(dayEdit.amIn, "amIn")
+          : baseDay.amArrival || "";
+      const amDeparture =
+        dayEdit.amOut !== undefined
+          ? format12HourWithAmPm(dayEdit.amOut, "amOut")
+          : baseDay.amDeparture || "";
+      const pmArrival =
+        dayEdit.pmIn !== undefined
+          ? format12HourWithAmPm(dayEdit.pmIn, "pmIn")
+          : baseDay.pmArrival || "";
+      const pmDeparture =
+        dayEdit.pmOut !== undefined
+          ? format12HourWithAmPm(dayEdit.pmOut, "pmOut")
+          : baseDay.pmDeparture || "";
+
+      const totalMinutes = computeUndertimeMinutes(
+        { amArrival, amDeparture, pmArrival, pmDeparture },
+        selectedSchedule,
+        graceState,
+      );
+
+      map[dayNum] =
+        totalMinutes > 0
+          ? {
+              hours: String(Math.floor(totalMinutes / 60)),
+              minutes: String(totalMinutes % 60),
+            }
+          : { hours: "", minutes: "" };
+    }
+    return map;
+  }, [baseRows, modifiedRows, daysInMonth, selectedSchedule]);
 
   const viewedMonthKey = `${year}-${String(month).padStart(2, "0")}`;
   const viewedMonthExport = exportLog.find(
@@ -1045,14 +1113,9 @@ export default function ReportPreparationView({ onClose }) {
                     dayEdit.pmOut !== undefined
                       ? dayEdit.pmOut
                       : baseDay.pmDeparture || "";
-                  undertimeHours =
-                    dayEdit.undertimeHours !== undefined
-                      ? dayEdit.undertimeHours
-                      : baseDay.undertimeHours || "";
-                  undertimeMinutes =
-                    dayEdit.undertimeMinutes !== undefined
-                      ? dayEdit.undertimeMinutes
-                      : baseDay.undertimeMinutes || "";
+                  const effective = effectiveUndertimeByDay[dayNum] || {};
+                  undertimeHours = effective.hours || "";
+                  undertimeMinutes = effective.minutes || "";
                 }
 
                 let rowClass = "";

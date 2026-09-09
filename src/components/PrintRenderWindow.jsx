@@ -91,6 +91,7 @@ export default function PrintRenderWindow({ jobId }) {
             month={month}
             rows={emp.rows}
             isPrintMode={true}
+            officialHoursArrival={emp.officialHoursArrival}
           />
         </div>
       ))}

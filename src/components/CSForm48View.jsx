@@ -147,6 +147,7 @@ export default function CSForm48View({
   month,
   rows,
   isPrintMode = false,
+  officialHoursArrival,
 }) {
   const monthName = new Date(year || 2000, month - 1, 1).toLocaleString(
     "en-US",
@@ -154,6 +155,11 @@ export default function CSForm48View({
       month: "long",
     },
   );
+
+  // Only override CSForm48Card's own "0.00" placeholder default when the
+  // caller actually resolved an Official Time schedule for this employee.
+  const arrivalProp =
+    officialHoursArrival !== undefined ? { officialHoursArrival } : {};
 
   if (!isPrintMode) {
     return (
@@ -165,6 +171,7 @@ export default function CSForm48View({
           monthName={monthName}
           rows={rows}
           copyType="OFFICE'S COPY"
+          {...arrivalProp}
         />
       </div>
     );
@@ -179,6 +186,7 @@ export default function CSForm48View({
         monthName={monthName}
         rows={rows}
         copyType="OFFICE'S COPY"
+        {...arrivalProp}
       />
       <CSForm48Card
         employeeName={employeeName}
@@ -187,6 +195,7 @@ export default function CSForm48View({
         monthName={monthName}
         rows={rows}
         copyType="EMPLOYEE'S COPY"
+        {...arrivalProp}
       />
     </div>
   );
