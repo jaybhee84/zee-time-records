@@ -46,7 +46,7 @@ jobs:
         id: existing
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           gh release view $env:RELEASE_TAG --repo buzzjay84/zee-time-records 2>$null
@@ -83,7 +83,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           repository: buzzjay84/zee-time-records
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ secrets.GH_TOKEN }}
           tag_name: ${{ steps.version.outputs.tag }}
           name: Zee Time Records ${{ steps.version.outputs.version }}
           generate_release_notes: true
