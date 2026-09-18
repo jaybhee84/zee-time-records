@@ -86,7 +86,7 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           tag_name: ${{ steps.version.outputs.tag }}
           name: Zee Time Records ${{ steps.version.outputs.version }}
-          generate_release_notes: true
+          body: Zee Time Records v${{ steps.version.outputs.version }}
           fail_on_unmatched_files: true
           make_latest: true
           files: |
