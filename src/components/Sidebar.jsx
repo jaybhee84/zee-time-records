@@ -90,7 +90,7 @@ export default function Sidebar({
       </nav>
 
       {/* --- FOOTER: ANIMATED LOGOS -> USER -> LOGOUT BUTTON --- */}
-      <div className="sidebar-footer">
+      {/*<div className="sidebar-footer">
         <div className="sidebar-logos">
           <img
             src={sdoLogo}
@@ -111,6 +111,7 @@ export default function Sidebar({
           <span>Log Out</span>
         </button>
       </div>
+      */}
 
       {showCodeModal && (
         <div

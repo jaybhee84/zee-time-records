@@ -21,6 +21,7 @@ concurrency:
 jobs:
   release-windows:
     runs-on: windows-latest
+
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -45,15 +46,19 @@ jobs:
         id: existing
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          gh release view $env:RELEASE_TAG 2>$null
+          gh release view $env:RELEASE_TAG --repo buzzjay84/zee-time-records 2>$null
+
           if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $env:RELEASE_TAG already exists."
             "exists=true" >> $env:GITHUB_OUTPUT
           } else {
+            Write-Host "Release $env:RELEASE_TAG does not exist."
             "exists=false" >> $env:GITHUB_OUTPUT
           }
+
           exit 0
 
       - name: Install dependencies
@@ -66,14 +71,24 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run electron:build:win -- --publish never
 
-      - name: Create tag and GitHub release
+      - name: Show generated release files
+        if: steps.existing.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          Write-Host "Generated release files:"
+          Get-ChildItem -Path release -Recurse
+
+      - name: Create GitHub Release in buzzjay84/zee-time-records
         if: steps.existing.outputs.exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
+          repository: buzzjay84/zee-time-records
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ steps.version.outputs.tag }}
           name: Zee Time Records ${{ steps.version.outputs.version }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          make_latest: true
           files: |
             release/*.exe
             release/*.exe.blockmap
