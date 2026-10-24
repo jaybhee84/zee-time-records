@@ -6,8 +6,6 @@ import {
   AlertCircle,
   Users,
   X,
-  FileDown,
-  Calendar,
 } from "lucide-react";
 
 function Toast({ status, onClose }) {
@@ -159,130 +157,6 @@ export default function BackupView({ employees = [], setEmployees }) {
   const [status, setStatus] = useState(null);
   const [importing, setImporting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [exportingAttlog, setExportingAttlog] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState("");
-
-  const handleExportAttlog = async () => {
-    if (!selectedMonth) {
-      setStatus({
-        type: "error",
-        msg: "Export blocked: Please select a month from the dropdown first.",
-      });
-      return;
-    }
-
-    setExportingAttlog(true);
-    try {
-      // Query SQLite database containing the updated 4-punch entries
-      const [selectedYear, selectedMonthNumber] = selectedMonth
-        .split("-")
-        .map(Number);
-      let monthPunches = await window.dtrApi?.getPunches({
-        year: selectedYear,
-        month: selectedMonthNumber,
-      });
-      if (!monthPunches || !Array.isArray(monthPunches)) {
-        monthPunches = [];
-      }
-
-      const filteredPunches = monthPunches.filter((p) => {
-        const timestamp = p.timestamp || p.rawTime || p.datetime || "";
-        return timestamp.startsWith(selectedMonth);
-      });
-
-      if (filteredPunches.length === 0) {
-        setStatus({
-          type: "error",
-          msg: `No attendance records found for ${selectedMonth}. Export stopped.`,
-        });
-        setExportingAttlog(false);
-        return;
-      }
-
-      // Resolve registry numbers and device staff numbers to one employee key,
-      // then enforce Vinea's finalized DTR shape: at most four chronological
-      // punches for each employee/day.
-      const normalizeIdentifier = (value) => {
-        const trimmed = String(value || "").trim();
-        const withoutLeadingZeros = trimmed.replace(/^0+/, "");
-        return withoutLeadingZeros || (trimmed ? "0" : "");
-      };
-      const aliasToEmployee = new Map();
-      employees.forEach((employee) => {
-        const canonical =
-          normalizeIdentifier(employee.registryNumber) ||
-          normalizeIdentifier(employee.staffNoOnDev);
-        [employee.registryNumber, employee.staffNoOnDev].forEach((value) => {
-          const alias = normalizeIdentifier(value);
-          if (alias && canonical) aliasToEmployee.set(alias, canonical);
-        });
-      });
-
-      const punchesByEmployeeDay = new Map();
-      filteredPunches.forEach((punch) => {
-        const timestamp = punch.timestamp || punch.rawTime || punch.datetime || "";
-        const rawPin = punch.pin || punch.staffNoOnDev || punch.registryNumber || "0";
-        const normalizedPin = normalizeIdentifier(rawPin);
-        const employeeKey = aliasToEmployee.get(normalizedPin) || normalizedPin;
-        const day = String(timestamp).slice(0, 10);
-        const key = `${employeeKey}|${day}`;
-        if (!punchesByEmployeeDay.has(key)) punchesByEmployeeDay.set(key, []);
-        punchesByEmployeeDay.get(key).push(punch);
-      });
-
-      const finalizedPunches = Array.from(punchesByEmployeeDay.values())
-        .flatMap((dayPunches) =>
-          dayPunches
-            .sort((a, b) =>
-              String(a.timestamp || "").localeCompare(String(b.timestamp || "")),
-            )
-            .slice(0, 4),
-        )
-        .sort((a, b) => {
-          const pinCompare = String(a.pin || "").localeCompare(String(b.pin || ""));
-          return pinCompare ||
-            String(a.timestamp || "").localeCompare(String(b.timestamp || ""));
-        });
-
-      // Format as tab-delimited ZKTeco attlog text
-      const lines = finalizedPunches.map((p) => {
-        const pin = p.pin || p.staffNoOnDev || p.registryNumber || "0";
-        const timestamp = p.timestamp || p.rawTime || p.datetime || "";
-        const punchStatus = p.status ?? "0";
-        const verifyType = p.verifyType ?? "1";
-        const workCode = p.workCode ?? "0";
-        const reserved = p.reserved ?? "0";
-
-        return `${pin}\t${timestamp}\t${punchStatus}\t${verifyType}\t${workCode}\t${reserved}`;
-      });
-
-      const fileContent = lines.join("\r\n");
-      const blob = new Blob([fileContent], {
-        type: "text/plain;charset=utf-8",
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `attlog_${selectedMonth}.dat`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      window.dtrApi?.recordAttlogExport(selectedMonth);
-
-      setStatus({
-        type: "success",
-        msg: `Successfully exported ${finalizedPunches.length} finalized records for ${selectedMonth} (maximum 4 per employee/day).`,
-      });
-    } catch (err) {
-      console.error("Export error:", err);
-      setStatus({ type: "error", msg: `Export failed: ${err.message}` });
-    } finally {
-      setExportingAttlog(false);
-    }
-  };
-
   const handleImportVinea = async () => {
     setImporting(true);
     try {
@@ -451,8 +325,8 @@ export default function BackupView({ employees = [], setEmployees }) {
           Data Backup & Restore
         </h2>
         <p style={{ fontSize: "14px", color: "#6b7280", marginTop: "4px" }}>
-          Export your entire database to keep a safe offline copy or generate
-          formatted exports for legacy software.
+          Export your entire database to keep a safe offline copy, restore it,
+          or import records from a Vinea backup.
         </p>
       </div>
 
@@ -549,103 +423,7 @@ export default function BackupView({ employees = [], setEmployees }) {
           </button>
         </div>
 
-        {false && (
-        <div style={cardStyle}>
-          <div style={{ marginBottom: "16px" }}>
-            <h3
-              style={{
-                fontSize: "16px",
-                fontWeight: 600,
-                color: "#111827",
-                margin: 0,
-              }}
-            >
-              Export Attendance Log
-            </h3>
-            <p
-              style={{
-                fontSize: "12px",
-                color: "#6b7280",
-                marginTop: "8px",
-                lineHeight: "1.5",
-              }}
-            >
-              Download monthly logs as{" "}
-              <code
-                style={{
-                  backgroundColor: "#f3f4f6",
-                  padding: "2px 4px",
-                  borderRadius: "4px",
-                  border: "1px solid #e5e7eb",
-                }}
-              >
-                attlog.dat
-              </code>{" "}
-              for legacy Vinea software.
-            </p>
 
-            <div
-              style={{
-                marginTop: "16px",
-                paddingTop: "12px",
-                borderTop: "1px dashed #e5e7eb",
-              }}
-            >
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  color: "#4b5563",
-                  textTransform: "uppercase",
-                  marginBottom: "6px",
-                }}
-              >
-                <Calendar size={13} style={{ color: "#7c3aed" }} />
-                Select Export Month:
-              </label>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                style={{
-                  width: "100%",
-                  fontSize: "12px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  padding: "8px",
-                  backgroundColor: "#f9fafb",
-                  outline: "none",
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
-          </div>
-
-          <button
-            onClick={handleExportAttlog}
-            disabled={exportingAttlog || !selectedMonth}
-            style={{
-              ...baseButtonStyle,
-              backgroundColor: "#7c3aed",
-              opacity: exportingAttlog || !selectedMonth ? 0.5 : 1,
-              cursor:
-                exportingAttlog || !selectedMonth ? "not-allowed" : "pointer",
-            }}
-          >
-            <FileDown size={16} />
-            <span>
-              {exportingAttlog
-                ? "Exporting…"
-                : !selectedMonth
-                  ? "Select Month First"
-                  : "Export attlog.dat"}
-            </span>
-          </button>
-        </div>
-        )}
 
         <div style={cardStyle}>
           <div style={{ marginBottom: "16px" }}>

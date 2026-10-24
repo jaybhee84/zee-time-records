@@ -59,6 +59,9 @@ contextBridge.exposeInMainWorld('dtrApi', {
   // Vinea (.mdb) Employee Import
   importVineaEmployees: () => ipcRenderer.invoke('import-vinea-employees'),
 
+  // VDI BioOffice (Vinea) Backup Export
+  exportVdiBackup: () => ipcRenderer.invoke('export-vdi-backup'),
+
   // Official Time Settings
   getOfficialTime: () => ipcRenderer.invoke('get-official-time'),
   saveOfficialTime: (payload) => ipcRenderer.invoke('save-official-time', payload),

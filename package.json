@@ -1,12 +1,13 @@
 {
   "name": "zee-time-records-app",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "DTR generator that imports ZKTeco USB flash-disk attendance dumps and produces CSC Form 48 style Daily Time Records.",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently --kill-others \"npm run dev:renderer\" \"wait-on http://localhost:5174 && node scripts/start-electron.cjs\"",
+    "dev:renderer": "vite",
     "build": "vite build",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5174 && electron .\"",
+    "electron:dev": "npm run dev",
     "electron:build": "vite build && electron-builder",
     "electron:build:win": "vite build && electron-builder --win",
     "electron:build:mac": "vite build && electron-builder --mac",
@@ -18,6 +19,7 @@
     "mdb": "^0.1.0",
     "mdb-reader": "^3.2.0",
     "pdf-to-printer": "^5.8.0",
+    "pdfjs-dist": "^6.4.299",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sql.js": "^1.14.1"
@@ -45,6 +47,7 @@
       "dist/**/*",
       "electron/**/*",
       "src/assets/ZeeTimeRecords.ico",
+      "src/assets/ZeeTimeRecords_Logo.png",
       "src/assets/ZeeTimeRecords.icns"
     ],
     "asarUnpack": [
@@ -85,6 +88,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Zee Time Records",
       "perMachine": true,
+      "packElevateHelper": true,
       "runAfterFinish": true,
       "allowElevation": true
     },

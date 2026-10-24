@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Filter,
   Users,
@@ -12,9 +12,10 @@ import {
   Lock,
   Unlock,
   X,
-  FileDown,
   AlertTriangle,
 } from "lucide-react";
+import AttendanceExport from "./AttendanceExport.jsx";
+import VdiExport from "./VdiExport.jsx";
 import {
   groupByPin,
   buildMonthlyDTR,
@@ -184,18 +185,22 @@ export default function ReportPreparationView({ onClose }) {
   const [unlockedDays, setUnlockedDays] = useState({});
   const [officialTime, setOfficialTime] = useState({});
   const [saveMessage, setSaveMessage] = useState(null);
-  const [exportingAttlog, setExportingAttlog] = useState(false);
-  const [exportMonth, setExportMonth] = useState(
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
-  );
-
+  const saveBannerRef = useRef(null);
   const [holidays, setHolidays] = useState({});
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [exportLog, setExportLog] = useState([]);
 
   useEffect(() => {
     if (!saveMessage) return;
-    const timer = setTimeout(() => setSaveMessage(null), 3500);
+    // Export results carry file paths and notes, so keep them up longer and
+    // bring them into view from the export cards at the bottom of the page.
+    if (saveMessage.fromExport) {
+      saveBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    const timer = setTimeout(
+      () => setSaveMessage(null),
+      saveMessage.fromExport ? 10000 : 3500,
+    );
     return () => clearTimeout(timer);
   }, [saveMessage]);
 
@@ -475,9 +480,6 @@ export default function ReportPreparationView({ onClose }) {
   const viewedMonthExport = exportLog.find(
     (entry) => entry.monthKey === viewedMonthKey,
   );
-  const exportMonthExport = exportLog.find(
-    (entry) => entry.monthKey === exportMonth,
-  );
 
   const handleCellChange = (dayNum, field, value) => {
     if (!devPin) return;
@@ -651,140 +653,14 @@ export default function ReportPreparationView({ onClose }) {
     }
   };
 
-  const handleExportAttlog = async () => {
-    if (!exportMonth) {
-      setSaveMessage({
-        type: "error",
-        text: "Select a month before exporting.",
-      });
-      return;
-    }
+  const handleExportStatus = ({ type, msg }) =>
+    setSaveMessage({ type, text: msg, fromExport: true });
 
-    const selectedMonth = exportMonth;
-    const [exportYear, exportMonthNumber] = selectedMonth.split("-").map(Number);
-    setExportingAttlog(true);
-
-    try {
-      let monthPunches = await window.dtrApi?.getPunches({
-        year: exportYear,
-        month: exportMonthNumber,
-      });
-      if (!Array.isArray(monthPunches)) monthPunches = [];
-
-      const filteredPunches = monthPunches.filter((punch) => {
-        const timestamp =
-          punch.timestamp || punch.rawTime || punch.datetime || "";
-        return timestamp.startsWith(selectedMonth);
-      });
-
-      if (filteredPunches.length === 0) {
-        setSaveMessage({
-          type: "error",
-          text: `No attendance records found for ${selectedMonth}.`,
-        });
-        return;
-      }
-
-      const normalizeIdentifier = (value) => {
-        const trimmed = String(value || "").trim();
-        const withoutLeadingZeros = trimmed.replace(/^0+/, "");
-        return withoutLeadingZeros || (trimmed ? "0" : "");
-      };
-
-      const aliasToEmployee = new Map();
-      employees.forEach((employee) => {
-        const canonical =
-          normalizeIdentifier(employee.registryNumber) ||
-          normalizeIdentifier(employee.staffNoOnDev);
-
-        [employee.registryNumber, employee.staffNoOnDev].forEach((value) => {
-          const alias = normalizeIdentifier(value);
-          if (alias && canonical) aliasToEmployee.set(alias, canonical);
-        });
-      });
-
-      const punchesByEmployeeDay = new Map();
-      filteredPunches.forEach((punch) => {
-        const timestamp =
-          punch.timestamp || punch.rawTime || punch.datetime || "";
-        const rawPin =
-          punch.pin || punch.staffNoOnDev || punch.registryNumber || "0";
-        const normalizedPin = normalizeIdentifier(rawPin);
-        const employeeKey = aliasToEmployee.get(normalizedPin) || normalizedPin;
-        const day = String(timestamp).slice(0, 10);
-        const key = `${employeeKey}|${day}`;
-
-        if (!punchesByEmployeeDay.has(key)) {
-          punchesByEmployeeDay.set(key, []);
-        }
-        punchesByEmployeeDay.get(key).push(punch);
-      });
-
-      const finalizedPunches = Array.from(punchesByEmployeeDay.values())
-        .flatMap((dayPunches) =>
-          dayPunches
-            .sort((a, b) =>
-              String(a.timestamp || "").localeCompare(
-                String(b.timestamp || ""),
-              ),
-            )
-            .slice(0, 4),
-        )
-        .sort((a, b) => {
-          const pinCompare = String(a.pin || "").localeCompare(
-            String(b.pin || ""),
-          );
-          return (
-            pinCompare ||
-            String(a.timestamp || "").localeCompare(String(b.timestamp || ""))
-          );
-        });
-
-      const lines = finalizedPunches.map((punch) => {
-        const pin =
-          punch.pin || punch.staffNoOnDev || punch.registryNumber || "0";
-        const timestamp =
-          punch.timestamp || punch.rawTime || punch.datetime || "";
-        const punchStatus = punch.status ?? "0";
-        const verifyType = punch.verifyType ?? "1";
-        const workCode = punch.workCode ?? "0";
-        const reserved = punch.reserved ?? "0";
-
-        return `${pin}\t${timestamp}\t${punchStatus}\t${verifyType}\t${workCode}\t${reserved}`;
-      });
-
-      const blob = new Blob([lines.join("\r\n")], {
-        type: "text/plain;charset=utf-8",
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `attlog_${selectedMonth}.dat`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      window.dtrApi?.recordAttlogExport(selectedMonth);
-      setExportLog((prev) => [
-        ...prev.filter((entry) => entry.monthKey !== selectedMonth),
-        { monthKey: selectedMonth, exportedAt: new Date().toISOString() },
-      ]);
-
-      setSaveMessage({
-        type: "success",
-        text: `Exported ${finalizedPunches.length} attendance records for ${selectedMonth}.`,
-      });
-    } catch (err) {
-      console.error("Export error:", err);
-      setSaveMessage({
-        type: "error",
-        text: `Export failed: ${err.message}`,
-      });
-    } finally {
-      setExportingAttlog(false);
-    }
-  };
+  const handleAttlogExported = (monthKey) =>
+    setExportLog((prev) => [
+      ...prev.filter((entry) => entry.monthKey !== monthKey),
+      { monthKey, exportedAt: new Date().toISOString() },
+    ]);
 
   const handleClose = () => {
     if (typeof onClose === "function") {
@@ -811,7 +687,6 @@ export default function ReportPreparationView({ onClose }) {
         .rp-save-banner.success { background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
         .rp-save-banner.error { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
         .rp-save-banner.warning { background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
-        .rp-export-warning { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 500; margin-top: 12px; background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; max-width: 420px; }
         .modern-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04); margin-bottom: 24px; }
         .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
         .card-title-row h3 { font-size: 0.95rem; font-weight: 600; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px; }
@@ -892,7 +767,11 @@ export default function ReportPreparationView({ onClose }) {
       </div>
 
       {saveMessage && (
-        <div className={`rp-save-banner ${saveMessage.type}`} role="status">
+        <div
+          ref={saveBannerRef}
+          className={`rp-save-banner ${saveMessage.type}`}
+          role="status"
+        >
           {saveMessage.text}
         </div>
       )}
@@ -1285,52 +1164,12 @@ export default function ReportPreparationView({ onClose }) {
         </div>
       </div>
 
-      <section className="modern-card">
-        <div className="card-title-row">
-          <div>
-            <h3>
-              <FileDown size={18} className="text-blue" />
-              Export Attendance Log
-            </h3>
-            <p className="subtext">
-              Create an attlog.dat file for any available attendance month.
-            </p>
-          </div>
-          <div className="action-buttons">
-            <div className="form-group" style={{ minWidth: "170px" }}>
-              <label className="form-label" htmlFor="export-month">
-                Export Month
-              </label>
-              <input
-                id="export-month"
-                className="form-input"
-                type="month"
-                value={exportMonth}
-                onChange={(event) => setExportMonth(event.target.value)}
-              />
-            </div>
-            <button
-              className="btn-primary-modern"
-              onClick={handleExportAttlog}
-              disabled={exportingAttlog || !exportMonth}
-            >
-              <FileDown size={16} />
-              {exportingAttlog ? "Exporting..." : "Export attlog.dat"}
-            </button>
-          </div>
-        </div>
-
-        {exportMonthExport && (
-          <div className="rp-export-warning">
-            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-            <span>
-              {`This month was already exported on ${formatExportDate(
-                exportMonthExport.exportedAt,
-              )}. Exporting again will only add whatever changed since then — Vinea will still be holding the earlier version of any record you've since edited, so clear those old entries in Vinea before importing this file.`}
-            </span>
-          </div>
-        )}
-      </section>
+      <AttendanceExport
+        employees={employees}
+        onStatus={handleExportStatus}
+        onExported={handleAttlogExported}
+      />
+      <VdiExport onStatus={handleExportStatus} />
     </div>
   );
 }

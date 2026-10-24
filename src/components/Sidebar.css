@@ -3,6 +3,21 @@
     --sidebar-logo-size: 150px;
 }
 
+.sidebar .sidebar-brand,
+.sidebar .sidebar-footer {
+    flex-shrink: 0;
+}
+
+.sidebar .sidebar-nav {
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 12px;
+}
+
+.sidebar .sidebar-nav-item {
+    flex-shrink: 0;
+}
+
 /* Sidebar Footer Container */
 .sidebar .sidebar-footer {
     border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -43,6 +58,9 @@
 
 /* User Display Label directly above Log Out */
 .sidebar .sidebar-user {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 13.5px !important;
     color: #9fb0d1 !important;
     font-weight: 500 !important;
@@ -53,6 +71,11 @@
 
 .sidebar .sidebar-logout {
     width: 100% !important;
+}
+
+.sidebar .sidebar-logout:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 3px;
 }
 
 /* Continuous Glow & Pulse Animation */

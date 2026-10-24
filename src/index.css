@@ -65,6 +65,30 @@ button:hover {
   font-size: 13px;
 }
 
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.error-banner span {
+  flex: 1;
+}
+
+.error-banner button {
+  background: #b91c1c;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
 /* ---------- App layout with sidebar ---------- */
 
 .app-shell-with-sidebar {

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Starting Zee Time Records</title>
+  <style>
+    body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(ellipse at top, #eaf1ff, #f8fafc 65%); color: #16233d; font-family: 'Segoe UI', Arial, sans-serif; -webkit-app-region: drag; }
+    img { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 12px 32px #16233d18; margin-bottom: 22px; }
+    h1 { font-size: 25px; margin: 0 0 10px; }
+    p { font-size: 14px; color: #52627a; margin: 0; }
+    .progress { width: 220px; height: 4px; background: #dce6f5; border-radius: 4px; overflow: hidden; margin-top: 26px; }
+    .progress span { display: block; width: 40%; height: 100%; background: #2f6fed; animation: slide 1.4s ease-in-out infinite; }
+    @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+    @media (prefers-reduced-motion: reduce) { .progress span { animation: none; width: 100%; } }
+  </style>
+</head>
+<body role="status" aria-busy="true">
+  <img src="../src/assets/ZeeTimeRecords_Logo.png" alt="" />
+  <h1>Zee Time Records</h1>
+  <p>Loading your database…</p>
+  <div class="progress" aria-hidden="true"><span></span></div>
+</body>
+</html>

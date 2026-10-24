@@ -34,6 +34,7 @@ import {
   isImportedGroupValue,
 } from "../utils/employeeGroups.js";
 import CSForm48View from "./CSForm48View.jsx";
+import DTRPdfPreview from "./DTRPdfPreview.jsx";
 
 const now = new Date();
 
@@ -76,6 +77,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
 
   // Blank DTR toggle — when on, all rows are printed empty (no log data)
   const [blankDtr, setBlankDtr] = useState(false);
+  const [leftAlignEntries, setLeftAlignEntries] = useState(false);
 
   // Official Time toggle — when on, undertime is computed against each
   // employee's Official Time schedule (with AM grace period) and the
@@ -128,13 +130,33 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
   // requiring a full app reload. The `punches` prop is the initial load
   // from the parent; `localPunches` overrides it once the fetch resolves.
   const [localPunches, setLocalPunches] = useState(null);
+  const yearOptions = useMemo(() => {
+    const currentYear = now.getFullYear();
+    const years = new Set([year]);
+    for (let value = currentYear - 10; value <= currentYear + 1; value++) {
+      years.add(value);
+    }
+    for (const punch of [...punches, ...(localPunches || [])]) {
+      const recordYear = Number(String(punch.timestamp || '').slice(0, 4));
+      if (Number.isInteger(recordYear) && recordYear >= 1900 && recordYear <= 9999) {
+        years.add(recordYear);
+      }
+    }
+    return [...years].sort((a, b) => b - a);
+  }, [year, punches, localPunches]);
 
   useEffect(() => {
+    let cancelled = false;
     setLocalPunches(null); // clear stale data while loading
     window.dtrApi
       ?.getPunches?.({ year, month })
-      .then((fresh) => setLocalPunches(Array.isArray(fresh) ? fresh : []))
-      .catch(() => setLocalPunches([]));
+      .then((fresh) => {
+        if (!cancelled) setLocalPunches(Array.isArray(fresh) ? fresh : []);
+      })
+      .catch(() => {
+        if (!cancelled) setLocalPunches([]);
+      });
+    return () => { cancelled = true; };
   }, [year, month]);
 
   const byPin = useMemo(
@@ -252,7 +274,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
       const familyStr = (emp.familyName || "").toUpperCase();
       const firstStr = (emp.firstName || "").toUpperCase();
       const middleStr = emp.middleInitial
-        ? `${emp.middleInitial.toUpperCase()}.`
+        ? `${emp.middleInitial.toUpperCase().replace(/\.$/, "")}.`
         : "";
       const employeeName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
       const schedule = getScheduleForEmployee(emp);
@@ -263,6 +285,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
         month,
         12,
         blankDtr ? null : schedule,
+        leftAlignEntries,
       );
       // Omit the key entirely (rather than "") when the toggle is off, so
       // CSForm48Card falls back to its own default exactly as before.
@@ -284,9 +307,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
       const printerList = await window.dtrApi?.getPrinters?.();
       if (Array.isArray(printerList) && printerList.length > 0) {
         setPrinters(printerList);
-        const def =
-          printerList.find((p) => p.isDefault || p.status === "default") ||
-          printerList[0];
+        const def = printerList.find((p) => p.isDefault === true);
         setSelectedPrinter(def?.name || "");
       } else {
         setPrinters([]);
@@ -369,14 +390,14 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
     }
   };
 
-  const handleDirectPrint = async () => {
+  const handleDirectPrint = async (printSettings = {}) => {
     setPrinting(true);
     setPreviewError(null);
     setPrintSuccess(false);
     try {
       const result = await window.dtrApi?.printDtr?.(
         selectedPrinter,
-        buildPrintPayload(),
+        { ...buildPrintPayload(), printSettings },
       );
       if (result?.success) {
         setPrintSuccess(true);
@@ -476,10 +497,42 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
         }
 
         .controls-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          display: flex;
+          flex-wrap: wrap;
           gap: 16px;
-          align-items: end;
+          align-items: start;
+        }
+
+        .print-options-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          align-items: start;
+          gap: 20px;
+          margin-top: 24px;
+          padding-top: 20px;
+          border-top: 1px solid #e2e8f0;
+        }
+
+        .print-option-help {
+          margin: 2px 0 0;
+          font-size: 12px;
+          line-height: 1.5;
+          color: #64748b;
+        }
+
+        .blank-dtr-toggle:focus-visible {
+          outline: 3px solid #93c5fd;
+          outline-offset: 2px;
+        }
+
+        .blank-dtr-toggle:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        @media (max-width: 900px) {
+          .print-options-grid { grid-template-columns: 1fr; gap: 16px; }
+          .form-group-grow { grid-column: auto; }
         }
 
         .form-group {
@@ -490,7 +543,24 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
         }
 
         .form-group-grow {
-          grid-column: span 2;
+          flex: 2 1 230px;
+        }
+
+        .controls-grid > .form-group {
+          flex: 1 1 140px;
+        }
+
+        .controls-grid > .form-group-grow {
+          flex: 2 1 230px;
+        }
+
+        .controls-grid > .print-year-field {
+          flex: 0 0 88px;
+        }
+
+        .controls-grid .form-select,
+        .controls-grid .form-input {
+          width: 100%;
         }
 
         .form-label {
@@ -676,7 +746,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
         .pdf-preview-modal {
           background: #ffffff;
           border-radius: 12px;
-          width: min(900px, 100%);
+          width: min(1200px, 100%);
           height: min(85vh, 900px);
           display: flex;
           flex-direction: column;
@@ -716,6 +786,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
 
         .pdf-preview-body {
           flex: 1;
+          min-height: 0;
           background: #f1f5f9;
           display: flex;
           align-items: stretch;
@@ -1002,7 +1073,6 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                       {e.middleInitial
                         ? `${e.middleInitial.toUpperCase()}. `
                         : ""}
-                      ({e.subGroup || "N/A"})
                     </option>
                   ))}
                 </select>
@@ -1029,23 +1099,31 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
               </select>
             </div>
 
-            <div className="form-group" style={{ maxWidth: "110px" }}>
+            <div className="form-group print-year-field">
               <label className="form-label">Year</label>
-              <input
-                className="form-input"
-                type="number"
+              <select
+                className="form-select"
                 value={year}
                 onChange={(e) => setYear(Number(e.target.value))}
-              />
+              >
+                {yearOptions.map((value) => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </select>
             </div>
 
+          </div>
+
+          <div className="print-options-grid">
             {/* Blank DTR Toggle */}
-            <div className="form-group" style={{ justifyContent: "flex-end" }}>
+            <div className="form-group">
               <label className="form-label">
                 <FileX size={14} /> Print Mode
               </label>
               <button
                 type="button"
+                role="switch"
+                aria-checked={blankDtr}
                 onClick={() => setBlankDtr((v) => !v)}
                 className={`blank-dtr-toggle${blankDtr ? " blank-dtr-toggle--on" : ""}`}
                 title={
@@ -1061,16 +1139,43 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                   {blankDtr ? "Blank DTR" : "With Logs"}
                 </span>
               </button>
+              <p className="print-option-help">Print recorded logs or an empty form.</p>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Vinea Layout</label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={leftAlignEntries}
+                onClick={() => {
+                  setLeftAlignEntries((v) => !v);
+                  setHasInteracted(true);
+                }}
+                disabled={blankDtr}
+                className={`blank-dtr-toggle${leftAlignEntries ? " blank-dtr-toggle--on" : ""}`}
+                title="Fill columns from left to right in time order, even when only afternoon logs exist"
+              >
+                <span className="blank-dtr-toggle__track" aria-hidden="true">
+                  <span className="blank-dtr-toggle__thumb" />
+                </span>
+                <span className="blank-dtr-toggle__label">
+                  {leftAlignEntries ? "Shift Left: On" : "Shift Left: Off"}
+                </span>
+              </button>
+              <p className="print-option-help">Fill entries left to right. Afternoon-only logs start in the morning columns.</p>
             </div>
 
             {/* Official Time / Undertime Computation Toggle */}
-            <div className="form-group" style={{ justifyContent: "flex-end" }}>
+            <div className="form-group">
               <label className="form-label">
                 <Clock size={14} /> Undertime
               </label>
               <button
                 type="button"
                 onClick={() => setApplyOfficialTime((v) => !v)}
+                role="switch"
+                aria-checked={applyOfficialTime}
                 disabled={blankDtr}
                 className={`blank-dtr-toggle${applyOfficialTime ? " blank-dtr-toggle--on" : ""}`}
                 title={
@@ -1088,6 +1193,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
                   {applyOfficialTime ? "Official Time: On" : "Official Time: Off"}
                 </span>
               </button>
+              <p className="print-option-help">Calculate undertime using the employee's official schedule.</p>
             </div>
           </div>
         </section>
@@ -1122,7 +1228,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
             const familyStr = (emp.familyName || "").toUpperCase();
             const firstStr = (emp.firstName || "").toUpperCase();
             const middleStr = emp.middleInitial
-              ? `${emp.middleInitial.toUpperCase()}.`
+              ? `${emp.middleInitial.toUpperCase().replace(/\.$/, "")}.`
               : "";
             const empName = `${familyStr}, ${firstStr} ${middleStr}`.trim();
 
@@ -1133,6 +1239,7 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
               month,
               12,
               blankDtr ? null : previewSchedule,
+              leftAlignEntries,
             );
             const previewOfficialHoursArrival =
               !blankDtr && previewSchedule
@@ -1246,10 +1353,14 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
               )}
 
               {!previewLoading && !previewError && previewBlobUrl && (
-                <iframe
-                  title="DTR PDF Preview"
-                  className="pdf-preview-frame"
-                  src={previewBlobUrl}
+                <DTRPdfPreview
+                  url={previewBlobUrl}
+                  printers={printers}
+                  printer={selectedPrinter}
+                  onPrinter={setSelectedPrinter}
+                  paperSize={buildPrintPayload().paperSize || "A4"}
+                  printing={printing}
+                  onPrint={handleDirectPrint}
                 />
               )}
             </div>
@@ -1260,57 +1371,6 @@ export default function PrintDTRPage({ employees = [], punches = [] }) {
               </div>
             )}
 
-            <div className="pdf-preview-footer">
-              <span className="pdf-preview-hint">
-                Pick a printer and hit Print to print directly, or use Save as
-                PDF / Open Externally for full OS print-preview controls.
-              </span>
-              <div className="pdf-preview-actions">
-                {printers.length > 0 && (
-                  <select
-                    className="printer-select"
-                    value={selectedPrinter}
-                    onChange={(e) => setSelectedPrinter(e.target.value)}
-                    disabled={previewLoading || printing}
-                    aria-label="Select printer"
-                  >
-                    {printers.map((p) => (
-                      <option key={p.name} value={p.name}>
-                        {p.displayName || p.name}
-                        {p.isDefault ? " (Default)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <button
-                  className="btn-secondary-modern"
-                  onClick={handleSaveAsPdf}
-                  disabled={previewLoading || !!previewError || savingPdf}
-                >
-                  <Download size={16} /> {savingPdf ? "Saving…" : "Save as PDF"}
-                </button>
-                <button
-                  className="btn-secondary-modern"
-                  onClick={handleOpenAndPrint}
-                  disabled={previewLoading || !!previewError || openingExternal}
-                >
-                  <ExternalLink size={16} />{" "}
-                  {openingExternal ? "Opening…" : "Open Externally"}
-                </button>
-                <button
-                  className="btn-primary-modern"
-                  onClick={handleDirectPrint}
-                  disabled={
-                    previewLoading ||
-                    !!previewError ||
-                    printing ||
-                    printers.length === 0
-                  }
-                >
-                  <Printer size={16} /> {printing ? "Printing…" : "Print"}
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

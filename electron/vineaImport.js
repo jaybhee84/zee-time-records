@@ -1,3 +1,29 @@
+const VINEA_DEPARTMENT_TO_SUBGROUP = {
+  'GRADE 1 TCHR.': 'Grade 1',
+  'GRADE 2 TCHR.': 'Grade 2',
+  'GRADE 3 TCHR.': 'Grade 3',
+  'GRADE 4 TCHR.': 'Grade 4',
+  'GRADE 5 TCHR.': 'Grade 5',
+  'GRADE 6 TCHR.': 'Grade 6',
+  'KINDER TCHR.': 'Kinder',
+  'DEPT. TEACHER': 'Departmental',
+  'SNC SPED TEACHER': 'SNED',
+  'SUBSTITUTE TEACHER': 'Substitute Teacher',
+  'ALIVECONTRL.': 'Alive',
+  'ADMIN': 'Admin',
+  'JOB ORDER': 'Job Order',
+  'NLC VOLUNTEERS': 'Subject Teacher',
+};
+
+function mapVineaDepartmentToSubgroup(rawDept) {
+  const normalized = (rawDept || '').trim().toUpperCase();
+  const mapped = VINEA_DEPARTMENT_TO_SUBGROUP[normalized];
+  return {
+    subGroup: mapped || (rawDept || '').trim(),
+    wasMapped: Boolean(mapped),
+  };
+}
+
 // Access stores wall-clock values. mdb-reader represents those fields as UTC
 // Dates; local getters would incorrectly apply the computer's timezone.
 function readPunch(row, legacy = false) {
@@ -56,4 +82,4 @@ function importRows(db, rows, beforeRepair = () => {}) {
   }
 }
 
-module.exports = { readPunch, importRows };
+module.exports = { readPunch, importRows, mapVineaDepartmentToSubgroup };

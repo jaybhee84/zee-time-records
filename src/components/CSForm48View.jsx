@@ -1,14 +1,16 @@
 import React from "react";
 import "./csForm48.css";
 
-// Converts a logged time value like "07:59 AM" to "07:59 am" — plain lowercase am/pm
+// Match the report's compact time notation, e.g. "07:59 AM" -> "7:59 am".
 function formatTimeCell(value) {
   if (!value) return "";
-  return String(value).replace(/\b(AM|PM)\b/i, (m) => m.toLowerCase());
+  return String(value)
+    .replace(/^0(?=\d:)/, "")
+    .replace(/\b(AM|PM)\b/i, (m) => m.toLowerCase());
 }
 
 // Inline width override for the Day/Date column
-const DAY_COLUMN_WIDTH = "16%";
+const DAY_COLUMN_WIDTH = "var(--col-day)";
 
 // Single CS Form 48 Card Layout
 export function CSForm48Card({
@@ -20,14 +22,27 @@ export function CSForm48Card({
   copyType = "OFFICE'S COPY",
   officialHoursArrival = "0.00",
   regularDays,
-  saturdays = "4.00",
+  saturdays,
 }) {
   // Dynamically calculate days in month (defaults to 31 for July)
   const daysInMonth = year && month ? new Date(year, month, 0).getDate() : 31;
   const formattedRegularDays = regularDays || `${daysInMonth}.00`;
+  // VDI sums the month's Saturday rows ({@sharedsat}), so 5-Saturday months print 5.00.
+  const saturdayCount = Array.from({ length: daysInMonth }, (_, i) =>
+    year && month ? new Date(year, month - 1, i + 1).getDay() : -1,
+  ).filter((weekday) => weekday === 6).length;
+  const formattedSaturdays = saturdays || `${year && month ? saturdayCount : 4}.00`;
+  // A resolved schedule ("8:00 AM - 12:00 NN / 1:00 PM - 5:00 PM") is too long
+  // for VDI's 0.00 box, so print it as one compact line per session instead.
+  const officialHoursLines = String(officialHoursArrival).includes(" - ")
+    ? String(officialHoursArrival)
+        .split(" / ")
+        .map((part) => part.replace(/\s*\b(AM|PM|NN)\b/gi, "").trim())
+        .filter(Boolean)
+    : [];
 
   return (
-    <div className="cs48-card">
+    <div className={`cs48-card${copyType === "EMPLOYEE'S COPY" ? " cs48-card--employee" : ""}`}>
       <div className="cs48-header-top">
         <span className="cs48-form-num">Civil Service Form No. 48</span>
         <span className="cs48-copy-tag">&gt;&gt;&gt;&gt;&gt;{copyType}</span>
@@ -35,7 +50,7 @@ export function CSForm48Card({
 
       <h2 className="cs48-title">DAILY TIME RECORD</h2>
       <div className="cs48-emp-name">
-        {employeeName || "____________________"}
+        <span>{employeeName || "____________________"}</span>
       </div>
 
       <div className="cs48-month-row">
@@ -50,11 +65,20 @@ export function CSForm48Card({
           <div>Official hours for arrival</div>
           <div className="cs48-meta-arrival-row">
             <span>and departure</span>
-            <span className="cs48-box" style={{ minWidth: "60px" }}>
-              {officialHoursArrival}
-            </span>
+            {officialHoursLines.length === 0 && (
+              <span className="cs48-box" style={{ minWidth: "60px" }}>
+                {officialHoursArrival}
+              </span>
+            )}
           </div>
         </div>
+        {officialHoursLines.length > 0 && (
+          <div className="cs48-official-hours">
+            {officialHoursLines.map((line, index) => (
+              <div key={index}>{line}</div>
+            ))}
+          </div>
+        )}
         <div className="cs48-meta-right">
           <div className="cs48-meta-line">
             <span>Regular days</span>
@@ -62,7 +86,7 @@ export function CSForm48Card({
           </div>
           <div className="cs48-meta-line">
             <span>Saturdays</span>
-            <span className="cs48-box">{saturdays}</span>
+            <span className="cs48-box">{formattedSaturdays}</span>
           </div>
         </div>
       </div>
@@ -90,7 +114,8 @@ export function CSForm48Card({
             <th>Departure</th>
             <th>Arrival</th>
             <th>Departure</th>
-            <th>Hour</th>
+            {/* VDI's office-copy label box clips "Hours" to "Hour" when printed. */}
+            <th>{copyType === "EMPLOYEE'S COPY" ? "Hours" : "Hour"}</th>
             <th>Minutes</th>
           </tr>
         </thead>

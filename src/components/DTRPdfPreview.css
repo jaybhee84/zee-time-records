@@ -1,0 +1,16 @@
+.dtr-swiss-preview { display: flex; width: 100%; height: 100%; min-height: 0; color: #172033; }
+.dtr-print-settings { width: 260px; flex-shrink: 0; padding: 20px; overflow-y: auto; background: #fff; border-right: 1px solid #dce2eb; box-sizing: border-box; }
+.dtr-print-settings label { display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px; font-size: 14px; font-weight: 600; }
+.dtr-print-settings input, .dtr-print-settings select { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #172033; }
+.dtr-print-settings p { font-size: 12px; line-height: 1.5; color: #64748b; }
+.dtr-print-settings button { width: 100%; justify-content: center; }
+.dtr-pdf-panel { display: flex; flex-direction: column; min-width: 0; flex: 1; background: #647080; }
+.dtr-pdf-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px; flex-wrap: wrap; background: #f1f5f9; font-size: 12px; }
+.print-dtr-page .dtr-pdf-toolbar button { padding: 8px 12px; min-height: 36px; background: #fff; color: #172033; font-size: 13px; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; }
+.print-dtr-page .dtr-pdf-toolbar button:hover:not(:disabled) { background: #e2e8f0; border-color: #94a3b8; }
+.print-dtr-page .dtr-pdf-toolbar button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.print-dtr-page .dtr-pdf-toolbar button:disabled { color: #64748b; background: #f1f5f9; opacity: .65; cursor: default; }
+.dtr-zoom-hint { color: #64748b; margin-left: auto; white-space: nowrap; }
+.dtr-pdf-stage { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+.dtr-pdf-stage canvas { margin: 0 auto; background: white; box-shadow: 0 3px 18px #0004; }
+@media (max-width: 700px) { .dtr-print-settings { width: 190px; padding: 12px; } }

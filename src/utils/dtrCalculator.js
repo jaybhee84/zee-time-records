@@ -214,9 +214,10 @@ function assignSlots(taps) {
  * @param {number} noonStartHour - kept for API compatibility, not used in slot logic
  * @param {Object|null} schedule - optional Official Time schedule
  *   ({ amIn, amOut, pmIn, pmOut, graceMinutes } in 24-hour "HH:MM")
+ * @param {boolean} leftAlignEntries - display punches chronologically from the first column
  * @returns {Array} one row per calendar day of the month
  */
-export function buildMonthlyDTR(punches, year, month, noonStartHour = 12, schedule = null) {
+export function buildMonthlyDTR(punches, year, month, noonStartHour = 12, schedule = null, leftAlignEntries = false) {
   const daysInMonth = new Date(year, month, 0).getDate();
 
   // Tracks how many days this month have already used the AM grace-period
@@ -238,13 +239,9 @@ export function buildMonthlyDTR(punches, year, month, noonStartHour = 12, schedu
     const sorted = (byDay[day] || []).sort((a, b) => a.datetime - b.datetime);
     const taps   = deduplicatePunches(sorted, 60);
 
-    // Vinea's report fills columns chronologically, including incomplete days.
-    // Keep that layout for imported history; device logs retain our slot rules.
-    const slots = taps.length > 0 && taps.every(p => p.source === 'vinea')
-      ? Object.fromEntries(['amArrival', 'amDeparture', 'pmArrival', 'pmDeparture']
-          .map((slot, index) => [slot, taps[index]?.datetime ?? null]))
-      : assignSlots(taps);
-    const { amArrival, amDeparture, pmArrival, pmDeparture } = slots;
+    // Every source (device or Vinea/VDI import) uses the slot rules; VDI's
+    // chronological fill is only applied by the leftAlignEntries print toggle.
+    const { amArrival, amDeparture, pmArrival, pmDeparture } = assignSlots(taps);
 
     const row = {
       day,
@@ -257,12 +254,21 @@ export function buildMonthlyDTR(punches, year, month, noonStartHour = 12, schedu
       undertimeMinutes: '',
     };
 
-    if (schedule) {
+    // Days with no punches (weekends, holidays, absences) carry no undertime.
+    if (schedule && taps.length > 0) {
       const totalMinutes = computeUndertimeMinutes(row, schedule, graceState);
       if (totalMinutes > 0) {
         row.undertimeHours = String(Math.floor(totalMinutes / 60));
         row.undertimeMinutes = String(totalMinutes % 60);
       }
+    }
+
+    // This print option only changes the displayed columns. Keep undertime
+    // based on the original slots so an afternoon punch remains afternoon work.
+    if (leftAlignEntries) {
+      ['amArrival', 'amDeparture', 'pmArrival', 'pmDeparture'].forEach((slot, index) => {
+        row[slot] = taps[index] ? formatTime(taps[index].datetime) : '';
+      });
     }
 
     rows.push(row);

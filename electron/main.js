@@ -6,31 +6,7 @@ const os = require('os');
 const crypto = require('crypto');
 const initSqlJs = require('sql.js');
 
-const VINEA_DEPARTMENT_TO_SUBGROUP = {
-  'GRADE 1 TCHR.': 'Grade 1',
-  'GRADE 2 TCHR.': 'Grade 2',
-  'GRADE 3 TCHR.': 'Grade 3',
-  'GRADE 4 TCHR.': 'Grade 4',
-  'GRADE 5 TCHR.': 'Grade 5',
-  'GRADE 6 TCHR.': 'Grade 6',
-  'KINDER TCHR.': 'Kinder',
-  'DEPT. TEACHER': 'Departmental',
-  'SNC SPED TEACHER': 'SNED',
-  'SUBSTITUTE TEACHER': 'Substitute Teacher',
-  'ALIVECONTRL.': 'Alive',
-  'ADMIN': 'Admin',
-  'JOB ORDER': 'Job Order',
-  'NLC VOLUNTEERS': 'Subject Teacher',
-};
-
-function mapVineaDepartmentToSubgroup(rawDept) {
-  const normalized = (rawDept || '').trim().toUpperCase();
-  const mapped = VINEA_DEPARTMENT_TO_SUBGROUP[normalized];
-  return {
-    subGroup: mapped || (rawDept || '').trim(),
-    wasMapped: Boolean(mapped),
-  };
-}
+const { mapVineaDepartmentToSubgroup } = require('./vineaImport');
 
 app.disableHardwareAcceleration();
 
@@ -66,8 +42,27 @@ function notifyAndInstallUpdate(info = downloadedUpdateInfo) {
   }
 
   // Give the user enough time to read the notification, then install without
-  // requiring a confirmation click. The second argument reopens the app.
-  setTimeout(() => autoUpdater.quitAndInstall(false, true), 6000);
+  // requiring a confirmation click. Silent mode skips the installer wizard;
+  // the second argument reopens the app once the update is in place.
+  setTimeout(() => autoUpdater.quitAndInstall(true, true), 6000);
+}
+
+// Automatic checks fail without any dialog, so keep a small log next to the
+// database to make a stuck update diagnosable.
+function createUpdateLogger() {
+  const logPath = path.join(app.getPath('userData'), 'updater.log');
+  const write = (level) => (message) => {
+    try {
+      if (fs.existsSync(logPath) && fs.statSync(logPath).size > 512 * 1024) {
+        fs.writeFileSync(logPath, '');
+      }
+      const text = message instanceof Error ? message.stack || message.message : String(message);
+      fs.appendFileSync(logPath, `${new Date().toISOString()} [${level}] ${text}\n`);
+    } catch {
+      // Logging must never interfere with the update itself.
+    }
+  };
+  return { info: write('info'), warn: write('warn'), error: write('error'), debug: () => {} };
 }
 
 async function checkForUpdates({ manual = false } = {}) {
@@ -162,6 +157,8 @@ function scheduleAutomaticUpdateCheck(delay = AUTO_UPDATE_CHECK_INTERVAL_MS) {
 }
 
 function configureAutoUpdater() {
+  autoUpdater.logger = createUpdateLogger();
+
   autoUpdater.on('update-available', () => {
     updateCheckInProgress = false;
     updateDownloadInProgress = true;
@@ -312,7 +309,8 @@ function createPrintWindow(jobId, paperSize = 'A4') {
     const { windowWidth, windowHeight } = resolvePaperSize(paperSize);
 
     const printWin = new BrowserWindow({
-      show: true,
+      // Rendered off-screen only; it still paints and signals readiness while hidden.
+      show: false,
       width: windowWidth,
       height: windowHeight,
       useContentSize: true,
@@ -408,6 +406,9 @@ function runQuery(sql, params = []) {
   db.run(sql, params);
   saveDbToDisk();
 }
+
+// Personnel names are kept in capitals, as on DTRs and in VDI.
+const upperName = (value) => String(value ?? '').trim().toUpperCase();
 
 async function initDatabase() {
   const SQL = await initSqlJs({
@@ -520,6 +521,15 @@ async function initDatabase() {
     `);
   }
 
+  // Names imported before capitals were enforced (e.g. "Cariaga, Jennifer").
+  const mixedCaseNames = getAll('SELECT registryNumber, familyName, firstName, middleInitial FROM employees')
+    .filter((emp) => ['familyName', 'firstName', 'middleInitial'].some((key) => (emp[key] ?? '') !== upperName(emp[key])));
+  for (const emp of mixedCaseNames) {
+    db.run('UPDATE employees SET familyName = ?, firstName = ?, middleInitial = ? WHERE registryNumber = ?', [
+      upperName(emp.familyName), upperName(emp.firstName), upperName(emp.middleInitial), emp.registryNumber,
+    ]);
+  }
+
   db.run(`
     INSERT OR IGNORE INTO official_time_settings (category, amIn, amOut, pmIn, pmOut, graceMinutes)
     VALUES ('teaching', '07:00', '12:00', '13:00', '16:30', 0);
@@ -531,8 +541,10 @@ async function initDatabase() {
   saveDbToDisk();
 }
 
-function createWindow() {
+function createWindow(startupWindow = null) {
   mainWindow = new BrowserWindow({
+    show: false,
+    backgroundColor: '#f8fafc',
     width: 1200,
     height: 800,
     icon: path.join(__dirname, '../src/assets/ZeeTimeRecords.ico'),
@@ -544,6 +556,10 @@ function createWindow() {
     },
   });
 
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    if (startupWindow && !startupWindow.isDestroyed()) startupWindow.close();
+  });
   loadAppInto(mainWindow);
 }
 
@@ -551,8 +567,33 @@ app.whenReady().then(async () => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.jaybhee.zkteco-dtr');
   }
-  await initDatabase();
-  createWindow();
+  const startupWindow = new BrowserWindow({
+    width: 460,
+    height: 380,
+    frame: false,
+    resizable: false,
+    show: false,
+    backgroundColor: '#f8fafc',
+    icon: path.join(__dirname, '../src/assets/ZeeTimeRecords.ico'),
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  const startupVisible = new Promise(resolve => {
+    startupWindow.once('ready-to-show', () => {
+      startupWindow.show();
+      resolve();
+    });
+  });
+  await startupWindow.loadFile(path.join(__dirname, 'startup.html'));
+  await startupVisible;
+  try {
+    await initDatabase();
+  } catch (error) {
+    dialog.showErrorBox('Unable to start Zee Time Records', `Could not load the database.\n${error.message}`);
+    startupWindow.close();
+    app.quit();
+    return;
+  }
+  createWindow(startupWindow);
   createApplicationMenu();
   configureAutoUpdater();
   scheduleAutomaticUpdateCheck(AUTO_UPDATE_START_DELAY_MS);
@@ -837,9 +878,9 @@ ipcMain.handle('import-vinea-employees', async () => {
       employees.push({
         registryNumber,
         staffNoOnDev: String(row.StaffNumber || '').trim() || registryNumber,
-        familyName: String(row.Lastname || '').trim(),
-        firstName: String(row.Firstname || '').trim(),
-        middleInitial: String(row.Middlename || '').trim(),
+        familyName: upperName(row.Lastname),
+        firstName: upperName(row.Firstname),
+        middleInitial: upperName(row.Middlename),
         sourceGroup: rawDept,
         subGroup,
       });
@@ -855,6 +896,53 @@ ipcMain.handle('import-vinea-employees', async () => {
     };
   } catch (err) {
     console.error('Failed to import Vinea employees:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// Writes a VDI BioOffice (Vinea) backup that mirrors this app's employees and
+// attendance using the bundled VDI database template.
+ipcMain.handle('export-vdi-backup', async () => {
+  try {
+    const { VDI_TEMPLATE_PATH, defaultBackupName, exportVdiBackup } = require('./vdiExport');
+    if (process.platform !== 'win32') {
+      return { success: false, error: 'Exporting a VDI backup is only available on Windows.' };
+    }
+
+    const employees = getAll('SELECT * FROM employees');
+    const punches = getAll('SELECT pin, staffNoOnDev, timestamp FROM punches');
+    if (punches.length === 0) {
+      return { success: false, error: 'There are no attendance records to export yet.' };
+    }
+
+    const basePath = VDI_TEMPLATE_PATH;
+
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export VDI Backup',
+      buttonLabel: 'Export',
+      defaultPath: path.join(app.getPath('desktop'), defaultBackupName()),
+      filters: [
+        { name: 'VDI Backup', extensions: ['zip'] },
+      ],
+    });
+    if (saveResult.canceled || !saveResult.filePath) return { canceled: true };
+    // Always a .zip; an existing file with the same name is overwritten.
+    if (!/\.zip$/i.test(saveResult.filePath)) saveResult.filePath += '.zip';
+    if (path.resolve(saveResult.filePath).toLowerCase() === path.resolve(basePath).toLowerCase()) {
+      return { success: false, error: 'Choose a different file name - the export cannot overwrite the VDI database it is built from.' };
+    }
+
+    const { default: MDBReader } = await import('mdb-reader');
+    const stats = await exportVdiBackup({
+      basePath,
+      outPath: saveResult.filePath,
+      employees,
+      punches,
+      MDBReader,
+    });
+    return { success: true, filePath: saveResult.filePath, basePath, ...stats };
+  } catch (err) {
+    console.error('Failed to export VDI backup:', err);
     return { success: false, error: err.message };
   }
 });
@@ -1051,9 +1139,9 @@ ipcMain.handle('save-employees', async (event, employees) => {
         emp.registryNumber,
         emp.staffNoOnDev || emp.registryNumber,
         emp.fprintAssigned ? 1 : 0,
-        emp.familyName || '',
-        emp.firstName || '',
-        emp.middleInitial || '',
+        upperName(emp.familyName),
+        upperName(emp.firstName),
+        upperName(emp.middleInitial),
         emp.subGroup || '',
         emp.sourceGroup || '',
       ]);
@@ -1093,7 +1181,20 @@ ipcMain.handle('save-punches', async (event, {
   year,
   month,
   newPunches = [],
+  importOnly = false,
 } = {}) => {
+  if (importOnly) {
+    try {
+      if (!pin) throw new Error('Employee PIN/ID is required.');
+      const { importMissingDays } = require('./attendanceImport');
+      const result = importMissingDays(db, { pin, registryNumber, staffNoOnDev, newPunches });
+      saveDbToDisk();
+      return result;
+    } catch (err) {
+      console.error('Failed to import punches:', err);
+      return { success: false, error: err.message };
+    }
+  }
   try {
     if (!pin) {
       return { success: false, error: 'Employee PIN/ID is required.' };
@@ -1244,6 +1345,7 @@ function buildDtrPdfOptions(paperSize = 'A4') {
     printBackground: true,
     pageSize: resolvePaperSize(paperSize).pdfPageSize,
     landscape: false,
+    // Zero margins: the page CSS carries the VDI offset, same as direct printing.
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
   };
 }
@@ -1306,55 +1408,74 @@ ipcMain.handle('open-dtr-pdf-external', async (event, payload = {}) => {
 
 ipcMain.handle('get-printers', async () => {
   try {
-    return await mainWindow.webContents.getPrintersAsync();
+    const printers = await mainWindow.webContents.getPrintersAsync();
+    if (process.platform === 'win32') {
+      try {
+        const { getDefaultPrinter } = require('pdf-to-printer');
+        const defaultPrinter = await getDefaultPrinter();
+        if (defaultPrinter?.name) {
+          const normalizeName = value => String(value || '').trim().toLowerCase();
+          return printers.map(printer => ({
+            ...printer,
+            isDefault: normalizeName(printer.name) === normalizeName(defaultPrinter.name)
+              || normalizeName(printer.displayName) === normalizeName(defaultPrinter.name),
+          }));
+        }
+      } catch (err) {
+        console.warn('Could not resolve the Windows default printer:', err.message);
+      }
+    }
+    return printers;
   } catch (err) {
     console.error('Failed to get printer list:', err);
     return [];
   }
 });
 
-function printPdfFile(pdfPath, deviceName) {
+// "1-3,5" -> [{from:0,to:2},{from:4,to:4}] (Electron page ranges are 0-based).
+function parsePageRanges(pages) {
+  if (!pages || !String(pages).trim()) return undefined;
+  return String(pages).split(',').map((part) => {
+    const [from, to = from] = part.trim().split('-').map(Number);
+    return { from: from - 1, to: to - 1 };
+  });
+}
+
+// Prints straight to the Windows printer (GDI), the same route VDI's Crystal
+// Reports engine uses, instead of re-placing a PDF through SumatraPDF.
+// Zero print margins: the page's own CSS carries VDI's 168-twip offset.
+function printDirect(wc, deviceName, paperSize = 'A4', printSettings = {}) {
   return new Promise((resolve, reject) => {
-    const { execFile } = require('child_process');
-
-    if (process.platform === 'win32') {
-      const { print } = require('pdf-to-printer');
-      print(pdfPath, { printer: deviceName || undefined, silent: true })
-        .then(resolve)
-        .catch(reject);
-      return;
-    }
-
-    const args = ['-o', 'fit-to-page=false'];
-    if (deviceName) args.push('-d', deviceName);
-    args.push(pdfPath);
-    execFile('lp', args, { timeout: 30000 }, (err) => {
-      if (err) reject(err);
-      else resolve();
+    wc.print({
+      silent: true,
+      printBackground: true,
+      deviceName: deviceName || undefined,
+      pageSize: resolvePaperSize(paperSize).printPageSize,
+      landscape: false,
+      margins: { marginType: 'none' },
+      scaleFactor: printSettings.scale === 'shrink' ? 97 : 100,
+      copies: Math.max(1, Math.min(99, Number(printSettings.copies) || 1)),
+      pageRanges: parsePageRanges(printSettings.pages),
+      color: printSettings.monochrome !== true,
+    }, (success, failureReason) => {
+      if (success) resolve();
+      else reject(new Error(failureReason || 'The printer rejected the job.'));
     });
   });
 }
 
 ipcMain.handle('print-dtr', async (event, payload = {}) => {
-  const { employees, year, month, deviceName, paperSize = 'A4' } = payload;
-  let tmpPath;
+  const { employees, year, month, deviceName, paperSize = 'A4', printSettings = {} } = payload;
   try {
-    const pdfBuffer = await runPrintJob(
+    await runPrintJob(
       { employees, year, month },
-      (wc) => wc.printToPDF(buildDtrPdfOptions(paperSize)),
+      (wc) => printDirect(wc, deviceName, paperSize, printSettings),
       paperSize,
     );
-    tmpPath = path.join(os.tmpdir(), `dtr-print-${Date.now()}.pdf`);
-    fs.writeFileSync(tmpPath, pdfBuffer);
-    await printPdfFile(tmpPath, deviceName);
     return { success: true };
   } catch (err) {
     console.error('Print failed:', err);
     return { success: false, error: err.message };
-  } finally {
-    if (tmpPath) {
-      fs.unlink(tmpPath, () => {});
-    }
   }
 });
 

@@ -496,11 +496,6 @@ export default function Login({ onLoginSuccess }) {
               </div>
             </div>
 
-            <div>
-              <div className="zt-brand-name">Zee Time Records</div>
-              <div className="zt-brand-tagline">Daily Time Record System</div>
-            </div>
-
             <div className="zt-brand-divider" />
 
             <div className="zt-brand-features">

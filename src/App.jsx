@@ -11,6 +11,7 @@ import BackupView from "./components/BackupView.jsx";
 import UserAccountPage from "./components/UserAccountPage.jsx";
 import PrintRenderWindow from "./components/PrintRenderWindow.jsx";
 import TutorialOverlay from "./components/TutorialOverlay.jsx";
+import AppLoadingScreen from "./components/AppLoadingScreen.jsx";
 
 const FIRST_RUN_TUTORIAL_KEY = "zee-time-records-tutorial-v1-complete";
 
@@ -22,6 +23,7 @@ export default function App() {
   const [punches, setPunches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [welcomeMessage, setWelcomeMessage] = useState(null);
   const [tutorialMode, setTutorialMode] = useState(null);
@@ -35,10 +37,10 @@ export default function App() {
 
   // Welcome message auto-dismiss
   useEffect(() => {
-    if (!welcomeMessage) return;
+    if (!welcomeMessage || loading) return;
     const timer = setTimeout(() => setWelcomeMessage(null), 3500);
     return () => clearTimeout(timer);
-  }, [welcomeMessage]);
+  }, [welcomeMessage, loading]);
 
   useEffect(() => {
     const removeListener = window.dtrApi?.onShowTutorial?.(() => {
@@ -48,11 +50,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || loading || loadError) return;
     if (localStorage.getItem(FIRST_RUN_TUTORIAL_KEY)) return;
     const timer = setTimeout(() => setTutorialMode("mini"), 900);
     return () => clearTimeout(timer);
-  }, [currentUser]);
+  }, [currentUser, loading, loadError]);
 
   const closeTutorial = () => {
     if (tutorialMode === "mini") {
@@ -95,15 +97,35 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser]);
+  }, [currentUser, loadAttempt]);
 
   // Safe auto-save: skip initial mount to prevent overwriting existing DB with defaults
+  const [saveError, setSaveError] = useState(null);
+  const [saveAttempt, setSaveAttempt] = useState(0);
   useEffect(() => {
     if (!currentUser || loading || loadError || isInitialMount.current) return;
-    window.dtrApi?.saveEmployees(employees);
-  }, [employees, currentUser, loading, loadError]);
+    let cancelled = false;
+    Promise.resolve(window.dtrApi?.saveEmployees(employees))
+      .then((ok) => {
+        if (cancelled) return;
+        setSaveError(
+          ok === false
+            ? "Employee changes could not be saved to the database."
+            : null,
+        );
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to save employees:", err);
+        setSaveError("Employee changes could not be saved to the database.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [employees, currentUser, loading, loadError, saveAttempt]);
 
   const handleLoginSuccess = (username) => {
+    setLoading(true);
     setCurrentUser(username);
     setWelcomeMessage(`Welcome, ${username || "Administrator"}!`);
   };
@@ -114,13 +136,17 @@ export default function App() {
     setPunches([]);
     setActiveTab("employees");
     setWelcomeMessage(null);
+    setTutorialMode(null);
     setLoadError(null);
+    setSaveError(null);
     isInitialMount.current = true;
   };
 
   if (!currentUser) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
+
+  if (loading) return <AppLoadingScreen />;
 
   return (
     <div className="app-shell-with-sidebar">
@@ -147,16 +173,32 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      <main className="main-content">
-        {loading ? (
-          <p className="hint">Loading application data...</p>
-        ) : loadError ? (
+      <main
+        className={`main-content${activeTab === "employees" && !loadError ? " main-content--fluid" : ""}`}
+      >
+        {loadError ? (
           <div className="error-banner">
             <AlertTriangle size={20} />
             <span>{loadError}</span>
+            <button type="button" onClick={() => {
+              setLoading(true);
+              setLoadAttempt((attempt) => attempt + 1);
+            }}>Try again</button>
           </div>
         ) : (
           <>
+            {saveError && (
+              <div className="error-banner">
+                <AlertTriangle size={20} />
+                <span>{saveError}</span>
+                <button
+                  type="button"
+                  onClick={() => setSaveAttempt((attempt) => attempt + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {activeTab === "employees" && (
               <EmployeesPage
                 employees={employees}

@@ -17,11 +17,14 @@ Plug that same drive into your PC and point the app at the file.
 
 ```bash
 npm install
-npm run electron:dev
+npm run dev
 ```
 
 This starts Vite (renderer) and Electron together. `concurrently` and
 `wait-on` handle the startup ordering.
+
+`npm run electron:dev` is an alias for the same command. To start only the
+renderer in a browser, use `npm run dev:renderer`.
 
 To build an installer:
 

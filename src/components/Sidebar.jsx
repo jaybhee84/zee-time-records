@@ -9,8 +9,6 @@ import {
   User,
   Clock,
 } from "lucide-react";
-import sdoLogo from "../assets/sdo.png";
-import swabeLogo from "../assets/swabe.png";
 
 const NAV_ITEMS = [
   { key: "employees", label: "Employees", icon: Users },
@@ -89,29 +87,13 @@ export default function Sidebar({
         ))}
       </nav>
 
-      {/* --- FOOTER: ANIMATED LOGOS -> USER -> LOGOUT BUTTON --- */}
-      {/*<div className="sidebar-footer">
-        <div className="sidebar-logos">
-          <img
-            src={sdoLogo}
-            alt="SDO Logo"
-            className="sidebar-logo logo-pulse"
-          />
-          <img
-            src={swabeLogo}
-            alt="Swabe Logo"
-            className="sidebar-logo logo-pulse-delayed"
-          />
-        </div>
-
-        <div className="sidebar-user">{currentUser}</div>
-
-        <button className="sidebar-logout" onClick={onLogout}>
+      <div className="sidebar-footer">
+        <div className="sidebar-user" title={currentUser}>{currentUser}</div>
+        <button type="button" className="sidebar-logout" onClick={onLogout}>
           <LogOut size={16} strokeWidth={2} />
           <span>Log Out</span>
         </button>
       </div>
-      */}
 
       {showCodeModal && (
         <div
